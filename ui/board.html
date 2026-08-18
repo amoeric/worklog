@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>看板 — 每日工作日誌</title>
+<link href="css/fonts.css" rel="stylesheet">
+<link href="css/app.css" rel="stylesheet">
+<script src="vendor/tailwind.js"></script>
+<script src="js/tailwind-config.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/store.js"></script>
+<script src="js/shell.js"></script>
+</head>
+<body class="flex h-screen flex-col overflow-hidden bg-paper text-ink antialiased dark:bg-dpaper dark:text-dink font-sans text-base" data-od-id="board-page">
+
+<div data-shell="topbar" data-tab="board.html" data-crumb="看板"></div>
+
+<div class="flex min-h-0 flex-1 flex-col">
+
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-3 pt-4 md:px-6" data-od-id="board-toolbar">
+    <h1 class="font-display shrink-0 text-3xl font-bold tracking-tightest md:text-4xl" data-od-id="board-title">看板</h1>
+    <span id="board-date" class="shrink-0 self-end pb-1 text-muted dark:text-dmuted md:min-w-[21rem]" data-od-id="board-date"></span>
+    <div id="scope" class="flex shrink-0 items-center gap-0.5 rounded-full bg-accentsoft p-1 dark:bg-daccentsoft"></div>
+
+    <div id="day-nav" class="relative flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface p-1 shadow-sm transition-opacity dark:border-dline dark:bg-dsurface" data-od-id="board-day-nav">
+      <button id="btn-prev-day" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="前一天"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button id="btn-cal" class="rounded-full px-3 py-1 leading-tight text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-haspopup="dialog" aria-expanded="false">日曆</button>
+      <button id="btn-today" class="rounded-full px-3 py-1 leading-tight text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink">今天</button>
+      <button id="btn-next-day" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="後一天"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+      <div id="cal-pop" class="absolute left-0 top-full z-30 mt-2 hidden w-[20rem] rounded-xl border border-line bg-surface p-3 shadow-pop dark:border-dline dark:bg-dsurface" role="dialog" aria-label="選擇日期"></div>
+    </div>
+    <span id="scope-note" class="min-w-0 truncate text-muted dark:text-dmuted"></span>
+    <span id="board-count" class="ml-auto shrink-0 tabular-nums text-muted dark:text-dmuted"></span>
+    <div class="flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface p-1 shadow-sm dark:border-dline dark:bg-dsurface" data-od-id="board-nav">
+      <button id="btn-left" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink disabled:opacity-30 dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="往左捲一欄"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button id="btn-right" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink disabled:opacity-30 dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="往右捲一欄"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+    </div>
+  </div>
+
+  <div id="pending-bar" class="hidden px-4 pb-3 md:px-6" data-od-id="pending-bar"></div>
+
+  <div class="relative min-h-0 flex-1">
+    <div id="board-scroll" class="h-full overflow-x-auto overflow-y-hidden px-4 pb-4 md:px-6">
+      <div id="columns" class="flex h-full min-w-max gap-3" data-od-id="board-columns"></div>
+    </div>
+    <div data-edge="left" class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-paper to-transparent opacity-0 transition-opacity dark:from-dpaper"></div>
+    <div data-edge="right" class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-paper to-transparent opacity-0 transition-opacity dark:from-dpaper"></div>
+  </div>
+</div>
+
+<script>
+window.Log.ready(function () {
+  var L = window.Log;
+  var params = new URLSearchParams(location.search);
+  var day = params.get('d');
+  if (day && !/^\d{7}$/.test(day)) day = null;
+  var scope = day ? 'day' : 'all';
+
+  var CARD = 'rounded-lg border border-line bg-surface p-2.5 shadow-sm dark:border-dline dark:bg-dsurface';
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function touchedOn(code) {
+    var ids = {};
+    L.entriesOf(code).forEach(function (e) { if (e.item) ids[e.item] = true; });
+    return ids;
+  }
+
+  function visibleItems() {
+    var all = L.allItems();
+    if (scope === 'day' && day) {
+      var ids = touchedOn(day);
+      return all.filter(function (it) { return ids[it.id]; });
+    }
+    return all;
+  }
+
+  function linkTag(href, label) {
+    return '<a href="' + esc(href) + '" target="_blank" rel="noopener" ' +
+      'class="shrink-0 rounded-full bg-accentsoft px-2 py-0.5 leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink">' + label + '</a>';
+  }
+
+  function card(item) {
+    var moveOpts = L.lifecycle().map(function (s) {
+      return '<option value="' + s.id + '"' + (s.id === item.status ? ' selected' : '') + '>' + s.label + '</option>';
+    }).join('');
+
+    var stay = (item.status === 'todo' || item.status === 'parked')
+      ? '<span class="shrink-0">' + L.stayLabel(item.since) + '</span>' : '';
+
+    return '' +
+      '<div draggable="true" data-card="' + item.id + '" data-od-id="card-' + item.id + '" ' +
+      'class="cursor-grab ' + CARD + ' hover:border-muted active:cursor-grabbing dark:hover:border-dmuted">' +
+        '<a href="work-item.html?id=' + item.id + (scope === 'day' && day ? '&d=' + day : '') + '" class="block leading-snug underline-offset-4 hover:underline">' + esc(item.title) + '</a>' +
+        '<div class="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted dark:text-dmuted">' +
+          '<span class="shrink-0 font-mono">' + esc(item.project) + '</span>' +
+          (item.tasks ? '<span class="shrink-0 tabular-nums">' + item.tasks.done + '/' + item.tasks.total + '</span>' : '') +
+          stay +
+        '</div>' +
+        '<div class="mt-2 flex flex-wrap items-center gap-2">' +
+          (item.issue ? linkTag(item.issue, L.linkLabel(item.issue)) : '') +
+          (item.mr ? linkTag(item.mr, L.linkLabel(item.mr)) : '') +
+          '<select data-move="' + item.id + '" aria-label="移到別的狀態" ' +
+            'class="ml-auto shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 text-muted dark:border-dline dark:bg-dpaper dark:text-dmuted">' +
+            moveOpts +
+          '</select>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function column(st, items) {
+    var body = items.map(card).join('');
+
+    return '' +
+      '<section data-drop="' + st.id + '" data-od-id="column-' + st.id + '" ' +
+      'class="flex h-full w-72 shrink-0 flex-col rounded-xl border border-line p-2 dark:border-dline ' + L.groupClass(st.id) + '">' +
+        '<div class="flex items-center gap-2 px-1 pb-2">' +
+          '<span class="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 font-medium leading-tight ' + L.statusClass(st.id) + '">' +
+            '<span class="h-2 w-2 rounded-full ' + L.statusDotClass(st.id) + '"></span>' + st.label + '</span>' +
+          '<span class="shrink-0 tabular-nums text-muted dark:text-dmuted">' + items.length + '</span>' +
+          '<span class="ml-auto min-w-0 truncate text-muted dark:text-dmuted">' + st.zh + '</span>' +
+        '</div>' +
+        '<div data-list class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-md">' +
+          body +
+          '<a href="todo-list.html" class="shrink-0 rounded-lg border border-dashed border-line px-2.5 py-2 text-muted hover:bg-surface hover:text-ink dark:border-dline dark:text-dmuted dark:hover:bg-dsurface dark:hover:text-dink">＋ 記到 TODO</a>' +
+        '</div>' +
+      '</section>';
+  }
+
+  function renderScope() {
+    var tabs = [
+      { id: 'all', label: '全部項目' },
+      { id: 'day', label: '某一天' },
+    ];
+    document.getElementById('scope').innerHTML = tabs.map(function (tb) {
+      var on = tb.id === scope;
+      return '<button data-scope="' + tb.id + '" class="rounded-full px-3.5 py-1.5 leading-tight ' +
+        (on ? 'bg-surface font-semibold text-ink shadow-sm dark:bg-dline dark:text-dink'
+            : 'text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink') +
+        '">' + tb.label + '</button>';
+    }).join('');
+
+    document.getElementById('scope').querySelectorAll('[data-scope]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        scope = b.getAttribute('data-scope');
+        /* 沒指定過日期就先挑最近有紀錄的那天，不然按了什麼都沒有 */
+        if (scope === 'day' && !day) day = L.latestCode();
+        closeCal();
+        render();
+      });
+    });
+
+    /* 換日那組只有看某一天時才有意義。
+       但不能整組藏起來——那會讓後面的東西左右跳，所以留在原地停用就好。 */
+    var nav = document.getElementById('day-nav');
+    var onDay = scope === 'day';
+    nav.classList.toggle('opacity-40', !onDay);
+    nav.classList.toggle('pointer-events-none', !onDay);
+    nav.setAttribute('aria-hidden', onDay ? 'false' : 'true');
+    nav.querySelectorAll('button').forEach(function (b) { b.disabled = !onDay; });
+    if (!onDay) closeCal();
+
+    var note;
+    if (scope === 'day' && day) {
+      note = visibleItems().length
+        ? '只看 ' + L.fileName(day) + ' 有推進的項目'
+        : L.fileName(day) + ' 這天沒有推進任何工作項目';
+    } else {
+      note = '把卡片拖到別欄就改狀態';
+    }
+    document.getElementById('scope-note').textContent = note;
+  }
+
+  function renderPending() {
+    var bar = document.getElementById('pending-bar');
+    var list = L.pendingEntries();
+    if (!list.length) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+    bar.classList.remove('hidden');
+    bar.innerHTML = '' +
+      '<div class="rounded-xl border border-line p-3 dark:border-dline ' + L.groupClass('parked') + '">' +
+        '<div class="flex flex-wrap items-center gap-2">' +
+          '<span class="shrink-0 rounded-full px-2.5 py-0.5 font-medium leading-tight ' + L.statusClass('parked') + '">未寫回 ' + list.length + '</span>' +
+          '<span class="min-w-0 flex-1 truncate text-muted dark:text-dmuted">這些變更還沒進 ' + L.fileName(L.today()) + '，複製後請 Claude 寫進去</span>' +
+          '<button id="copy-pending" class="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft">複製全部</button>' +
+          '<button id="clear-pending" class="shrink-0 rounded-full px-3 py-1.5 leading-tight text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink">丟掉</button>' +
+        '</div>' +
+        '<div class="mt-2 space-y-1 font-mono text-muted dark:text-dmuted">' +
+          list.map(function (p) { return '<div class="truncate">' + esc(L.entryMarkdown(p.entry)) + '</div>'; }).join('') +
+        '</div>' +
+      '</div>';
+
+    document.getElementById('copy-pending').addEventListener('click', function () {
+      var text = list.map(function (p) { return L.entryMarkdown(p.entry); }).join('\n');
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
+      this.textContent = '已複製';
+    });
+    document.getElementById('clear-pending').addEventListener('click', function () {
+      L.clearPending().then(render);
+    });
+  }
+
+  function wire() {
+    var cols = document.getElementById('columns');
+
+    cols.querySelectorAll('[data-card]').forEach(function (el) {
+      el.addEventListener('dragstart', function (e) {
+        e.dataTransfer.setData('text/plain', el.getAttribute('data-card'));
+        e.dataTransfer.effectAllowed = 'move';
+        el.classList.add('opacity-50');
+      });
+      el.addEventListener('dragend', function () { el.classList.remove('opacity-50'); });
+    });
+
+    cols.querySelectorAll('[data-drop]').forEach(function (col) {
+      var list = col.querySelector('[data-list]');
+      col.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        list.classList.add('ring-2', 'ring-inset', 'ring-accent', 'rounded-lg', 'dark:ring-daccent');
+      });
+      col.addEventListener('dragleave', function () {
+        list.classList.remove('ring-2', 'ring-inset', 'ring-accent', 'rounded-lg', 'dark:ring-daccent');
+      });
+      col.addEventListener('drop', function (e) {
+        e.preventDefault();
+        list.classList.remove('ring-2', 'ring-inset', 'ring-accent', 'rounded-lg', 'dark:ring-daccent');
+        var id = e.dataTransfer.getData('text/plain');
+        if (id) L.moveItem(id, col.getAttribute('data-drop')).then(render);
+      });
+    });
+
+    // 手機沒有拖曳，用卡片上的下拉選單
+    cols.querySelectorAll('[data-move]').forEach(function (sel) {
+      sel.addEventListener('change', function () {
+        L.moveItem(sel.getAttribute('data-move'), sel.value).then(render);
+      });
+      sel.addEventListener('click', function (e) { e.stopPropagation(); });
+    });
+  }
+
+  /* 捲軸全站藏起來了，所以橫向捲動要另外給線索：
+     兩側淡出、滾輪直接橫捲、工具列有左右箭頭。 */
+  var scroller = document.getElementById('board-scroll');
+  var edgeLeft = document.querySelector('[data-edge="left"]');
+  var edgeRight = document.querySelector('[data-edge="right"]');
+  var btnLeft = document.getElementById('btn-left');
+  var btnRight = document.getElementById('btn-right');
+
+  function updateEdges() {
+    var max = scroller.scrollWidth - scroller.clientWidth;
+    var atStart = scroller.scrollLeft <= 4;
+    var atEnd = scroller.scrollLeft >= max - 4;
+    edgeLeft.style.opacity = atStart ? '0' : '1';
+    edgeRight.style.opacity = (max <= 4 || atEnd) ? '0' : '1';
+    btnLeft.disabled = atStart;
+    btnRight.disabled = max <= 4 || atEnd;
+  }
+
+  function scrollByColumn(dir) {
+    var col = scroller.querySelector('[data-drop]');
+    var step = col ? col.getBoundingClientRect().width + 12 : 300;
+    scroller.scrollBy({ left: dir * step, behavior: 'smooth' });
+  }
+
+  scroller.addEventListener('scroll', updateEdges);
+  window.addEventListener('resize', updateEdges);
+  btnLeft.addEventListener('click', function () { scrollByColumn(-1); });
+  btnRight.addEventListener('click', function () { scrollByColumn(1); });
+
+  /* 滑鼠只有直向滾輪，把它轉成橫捲；觸控板本來就會橫捲，那種就別攔 */
+  scroller.addEventListener('wheel', function (e) {
+    if (e.deltaX !== 0 || e.shiftKey) return;
+    var max = scroller.scrollWidth - scroller.clientWidth;
+    if (max <= 4) return;
+    e.preventDefault();
+    scroller.scrollLeft += e.deltaY;
+  }, { passive: false });
+
+  /* ---------- 選日期：日曆彈出層與換日 ---------- */
+  var calMonth = null;
+  var calPop = document.getElementById('cal-pop');
+  var btnCal = document.getElementById('btn-cal');
+
+  function renderCal() {
+    var cur = day || L.today();
+    var p = L.parts(cur);
+    if (!calMonth) calMonth = { roc: p.roc, month: p.month };
+    var year = calMonth.roc + 1911;
+    var days = new Date(year, calMonth.month, 0).getDate();
+    var lead = new Date(year, calMonth.month - 1, 1).getDay();
+
+    var cells = '';
+    for (var i = 0; i < lead; i++) cells += '<span></span>';
+    for (var d = 1; d <= days; d++) {
+      var code = String(calMonth.roc) + L.pad(calMonth.month, 2) + L.pad(d, 2);
+      var n = L.countOf(code);
+      var isCur = code === cur;
+      var cls = isCur
+        ? 'bg-accent font-semibold text-white dark:bg-daccent'
+        : n > 0
+          ? 'font-medium text-ink hover:bg-accentsoft dark:text-dink dark:hover:bg-daccentsoft'
+          : 'text-muted hover:bg-accentsoft dark:text-dmuted dark:hover:bg-daccentsoft';
+      cells += '<button data-pick="' + code + '" class="relative grid h-9 place-items-center rounded-full tabular-nums ' + cls + '">' + d +
+        (n > 0 && !isCur ? '<span class="absolute bottom-1 h-1 w-1 rounded-full bg-accent dark:bg-daccent"></span>' : '') +
+        '</button>';
+    }
+
+    calPop.innerHTML = '' +
+      '<div class="mb-2 flex items-center gap-2">' +
+        '<button data-cal="-1" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="上個月">‹</button>' +
+        '<span class="flex-1 text-center font-semibold tabular-nums">民國' + calMonth.roc + '年 ' + calMonth.month + '月</span>' +
+        '<button data-cal="1" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="下個月">›</button>' +
+      '</div>' +
+      '<div class="grid grid-cols-7 gap-0.5 text-center text-muted dark:text-dmuted">' +
+        L.WEEKDAYS.map(function (w) { return '<span class="py-1">' + w + '</span>'; }).join('') +
+      '</div>' +
+      '<div class="grid grid-cols-7 gap-0.5">' + cells + '</div>' +
+      '<p class="mt-2 text-muted dark:text-dmuted">有點的日子表示那天有日誌</p>';
+
+    calPop.querySelectorAll('[data-cal]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var m = calMonth.month + Number(b.getAttribute('data-cal'));
+        var y = calMonth.roc;
+        if (m < 1) { m = 12; y -= 1; }
+        if (m > 12) { m = 1; y += 1; }
+        calMonth = { roc: y, month: m };
+        renderCal();
+      });
+    });
+    calPop.querySelectorAll('[data-pick]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        closeCal();
+        goDay(b.getAttribute('data-pick'));
+      });
+    });
+  }
+
+  function openCal() {
+    calMonth = null;
+    calPop.classList.remove('hidden');
+    btnCal.setAttribute('aria-expanded', 'true');
+    renderCal();
+  }
+  function closeCal() {
+    calPop.classList.add('hidden');
+    btnCal.setAttribute('aria-expanded', 'false');
+  }
+
+  function goDay(code) {
+    day = code;
+    scope = 'day';
+    render();
+  }
+
+  btnCal.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (calPop.classList.contains('hidden')) openCal(); else closeCal();
+  });
+  document.getElementById('btn-prev-day').addEventListener('click', function () { goDay(L.shift(day || L.today(), -1)); });
+  document.getElementById('btn-next-day').addEventListener('click', function () { goDay(L.shift(day || L.today(), 1)); });
+  document.getElementById('btn-today').addEventListener('click', function () { goDay(L.today()); });
+  document.addEventListener('click', function (e) {
+    if (!calPop.classList.contains('hidden') && !calPop.contains(e.target)) closeCal();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeCal();
+  });
+
+  function render() {
+    var items = visibleItems();
+
+    document.getElementById('columns').innerHTML = L.lifecycle().map(function (st) {
+      return column(st, items.filter(function (it) { return it.status === st.id; }));
+    }).join('');
+
+    /* 現在看的是哪一天，標題旁邊與麵包屑都要看得到 */
+    var where = scope === 'day' && day
+      ? L.fileName(day) + '　' + L.longLabel(day) + (day === L.today() ? '（今天）' : '')
+      : '全部工作項目';
+    document.getElementById('board-date').textContent = where;
+    var crumb = document.querySelector('[data-od-id="crumb"]');
+    if (crumb) crumb.textContent = scope === 'day' && day ? '看板　' + L.fileName(day) : '看板';
+
+    document.getElementById('board-count').textContent = items.length + ' 件';
+    renderScope();
+    renderPending();
+    wire();
+    if (window.Shell && window.Shell.refreshBadge) window.Shell.refreshBadge();
+    updateEdges();
+    if (!calPop.classList.contains('hidden')) renderCal();
+    try {
+      history.replaceState(null, '', scope === 'day' && day ? 'board.html?d=' + day : 'board.html');
+    } catch (e) {}
+  }
+
+  render();
+});
+</script>
+</body>
+</html>

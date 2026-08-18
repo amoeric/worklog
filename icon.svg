@@ -1,0 +1,43 @@
+<!-- App 圖示：把介面骨架縮成一格。
+     改版後的版面是「上方兩層導覽 ＋ 下方清單」，所以圖示也跟著換掉舊的側邊欄。
+     色值寫死淺色模式的 bg / surface / border / accent 四個 token，
+     因為圖示顯示在系統桌面上，不跟隨 app 內的主題。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="每日工作日誌">
+  <defs>
+    <clipPath id="squircle">
+      <rect width="64" height="64" rx="14"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#squircle)">
+    <rect width="64" height="64" fill="#ffffff"/>
+
+    <!-- 第一層：品牌圓點與名稱 -->
+    <rect width="64" height="22" fill="#f6f7f9"/>
+    <circle cx="10" cy="8" r="2.6" fill="#111827"/>
+    <rect x="16" y="6" width="16" height="4" rx="2" fill="#111827" opacity="0.55"/>
+
+    <!-- 第二層：分頁，第一個是選取狀態 -->
+    <rect x="7" y="15" width="9" height="3.2" rx="1.6" fill="#111827"/>
+    <rect x="7" y="20.5" width="9" height="1.5" fill="#111827"/>
+    <rect x="20" y="15" width="9" height="3.2" rx="1.6" fill="#111827" opacity="0.2"/>
+    <rect x="33" y="15" width="9" height="3.2" rx="1.6" fill="#111827" opacity="0.2"/>
+    <rect x="46" y="15" width="9" height="3.2" rx="1.6" fill="#111827" opacity="0.2"/>
+    <line x1="0" y1="22" x2="64" y2="22" stroke="#e5e7eb" stroke-width="1"/>
+
+    <!-- 下方：日誌條目，右邊是狀態徽章 -->
+    <circle cx="10" cy="31" r="2" fill="#111827"/>
+    <rect x="16" y="29" width="26" height="4" rx="2" fill="#111827" opacity="0.55"/>
+    <rect x="46" y="29" width="9" height="4" rx="2" fill="#fef9c3"/>
+
+    <circle cx="10" cy="42" r="2" fill="#111827"/>
+    <rect x="16" y="40" width="20" height="4" rx="2" fill="#111827" opacity="0.55"/>
+    <rect x="46" y="40" width="9" height="4" rx="2" fill="#d4e3fc"/>
+
+    <rect x="8" y="52.25" width="4" height="1.5" rx="0.75" fill="#6b7280"/>
+    <rect x="16" y="51" width="23" height="4" rx="2" fill="#111827" opacity="0.24"/>
+  </g>
+
+  <!-- 白底在淺色桌面上也要看得到邊 -->
+  <rect x="0.5" y="0.5" width="63" height="63" rx="13.5" fill="none" stroke="#d7dae0" stroke-width="1"/>
+</svg>

@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>日誌 — 每日工作日誌</title>
+<link href="css/fonts.css" rel="stylesheet">
+<link href="css/app.css" rel="stylesheet">
+<script src="vendor/tailwind.js"></script>
+<script src="js/tailwind-config.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/store.js"></script>
+<script src="js/shell.js"></script>
+</head>
+<body class="flex h-screen flex-col overflow-hidden bg-paper text-ink antialiased dark:bg-dpaper dark:text-dink font-sans text-base" data-od-id="daily-log-page">
+
+<div data-shell="topbar" data-tab="daily-log.html" data-crumb=""></div>
+
+<div class="flex min-h-0 flex-1 flex-col">
+
+  <!-- 標題列：日期大字在左，換日在右 -->
+  <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-3 pt-4 md:px-6" data-od-id="date-headline">
+    <h1 id="date-code" class="font-display shrink-0 font-mono text-3xl font-bold tabular-nums tracking-tightest md:text-4xl" data-od-id="date-code"></h1>
+    <span id="date-long" class="shrink-0 self-end pb-1 text-muted dark:text-dmuted" data-od-id="date-long"></span>
+    <span id="date-count" class="ml-auto shrink-0 tabular-nums text-muted dark:text-dmuted" data-od-id="date-count"></span>
+    <div class="flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface p-1 shadow-sm dark:border-dline dark:bg-dsurface" data-od-id="date-nav">
+      <button id="btn-prev" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="往前"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button id="btn-today" class="rounded-full px-3 py-1 leading-tight text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" data-od-id="btn-today">今天</button>
+      <button id="btn-next" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="往後"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+    </div>
+  </div>
+
+  <!-- 範圍：單日或一段期間 -->
+  <div class="flex shrink-0 flex-wrap items-center gap-2 px-4 pb-3 md:px-6" data-od-id="range-toolbar">
+    <div id="range-tabs" class="flex shrink-0 items-center gap-0.5 rounded-full bg-accentsoft p-1 dark:bg-daccentsoft"></div>
+    <div id="custom-range" class="hidden flex-wrap items-center gap-2">
+      <input id="from-date" type="date" class="shrink-0 rounded-lg border border-line bg-surface px-2 py-1.5 shadow-sm dark:border-dline dark:bg-dsurface" aria-label="起始日">
+      <span class="shrink-0 text-muted dark:text-dmuted">到</span>
+      <input id="to-date" type="date" class="shrink-0 rounded-lg border border-line bg-surface px-2 py-1.5 shadow-sm dark:border-dline dark:bg-dsurface" aria-label="結束日">
+    </div>
+    <span id="range-note" class="min-w-0 truncate text-muted dark:text-dmuted"></span>
+  </div>
+
+  <!-- 檔案與動作 -->
+  <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 pb-3 dark:border-dline md:px-6" data-od-id="date-toolbar">
+    <button id="file-name" title="用系統預設程式開這個檔" class="shrink-0 rounded-full bg-accentsoft px-2.5 py-1 font-mono leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink"></button>
+    <span class="min-w-0 text-muted dark:text-dmuted">唯讀。日誌由 Claude 寫進檔案，這裡只負責讀。</span>
+
+    <div class="relative ml-auto shrink-0">
+      <button id="btn-cal" class="rounded-full border border-line bg-surface px-3 py-1.5 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft" aria-haspopup="dialog" aria-expanded="false" data-od-id="btn-calendar">日曆</button>
+      <div id="cal-pop" class="absolute right-0 top-full z-20 mt-2 hidden w-[20rem] rounded-xl border border-line bg-surface p-3 shadow-pop dark:border-dline dark:bg-dsurface" role="dialog" aria-label="選擇日期" data-od-id="calendar-popover"></div>
+    </div>
+
+    <a id="to-board" href="board.html" class="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft">看板</a>
+  </div>
+
+  <div id="scroll" class="min-h-0 flex-1 overflow-y-auto px-4 pb-10 pt-4 md:px-6">
+    <div id="list" class="w-full" data-od-id="log-sections"></div>
+  </div>
+</div>
+
+<script>
+window.Log.ready(function () {
+  var L = window.Log;
+
+  /* 範圍：單日是預設，其餘都是「到 anchor 為止的一段」。
+     不管哪一種，畫面都由 from / to 兩個日期驅動。 */
+  var MODES = [
+    { id: 'day', label: '單日' },
+    { id: 'week', label: '7 天', span: 7 },
+    { id: 'month', label: '30 天', span: 30 },
+    { id: 'all', label: '全部' },
+    { id: 'custom', label: '自訂' },
+  ];
+
+  var params = new URLSearchParams(location.search);
+  var mode = MODES.some(function (m) { return m.id === params.get('range'); })
+    ? params.get('range') : 'day';
+  /* 沒指定日期就開最靠近今天、而且真的有檔案的那一天 */
+  var anchor = params.get('d') || L.latestCode();
+  if (!/^\d{7}$/.test(anchor)) anchor = L.latestCode();
+  var custom = { from: L.shift(anchor, -6), to: anchor };
+
+  var calMonth = null;
+
+  var el = {
+    list: document.getElementById('list'),
+    code: document.getElementById('date-code'),
+    long: document.getElementById('date-long'),
+    count: document.getElementById('date-count'),
+    file: document.getElementById('file-name'),
+    cal: document.getElementById('cal-pop'),
+    scroll: document.getElementById('scroll'),
+    board: document.getElementById('to-board'),
+    tabs: document.getElementById('range-tabs'),
+    note: document.getElementById('range-note'),
+    customBox: document.getElementById('custom-range'),
+    fromInput: document.getElementById('from-date'),
+    toInput: document.getElementById('to-date'),
+  };
+
+  /* 群組內嵌清單：白面板 + 髮絲線分隔，最後一列不畫線 */
+  var ROW = 'border-b border-line px-3 py-2.5 last:border-b-0 dark:border-dline';
+  var PANEL = 'overflow-hidden rounded-xl border border-line bg-surface dark:border-dline dark:bg-dsurface';
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function modeById(id) {
+    for (var i = 0; i < MODES.length; i++) if (MODES[i].id === id) return MODES[i];
+    return MODES[0];
+  }
+
+  /* 目前的起訖日 */
+  function range() {
+    var codes = L.allCodes();
+    if (mode === 'all') {
+      if (!codes.length) return { from: anchor, to: anchor };
+      return { from: codes[0], to: codes[codes.length - 1] };
+    }
+    if (mode === 'custom') {
+      var a = custom.from, b = custom.to;
+      return a <= b ? { from: a, to: b } : { from: b, to: a };
+    }
+    var span = modeById(mode).span || 1;
+    return { from: L.shift(anchor, -(span - 1)), to: anchor };
+  }
+
+  function isSingleDay() {
+    var r = range();
+    return r.from === r.to;
+  }
+
+  /* 這段期間內有紀錄的日子，新的在前 */
+  function codesInRange() {
+    var r = range();
+    return L.allCodes().filter(function (c) { return c >= r.from && c <= r.to; }).reverse();
+  }
+
+  /* 民國碼 ↔ input[type=date] 的西元字串 */
+  function codeToInput(code) {
+    var p = L.parts(code);
+    return (p.roc + 1911) + '-' + L.pad(p.month, 2) + '-' + L.pad(p.day, 2);
+  }
+  function inputToCode(value) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+    if (!m) return null;
+    return String(Number(m[1]) - 1911) + m[2] + m[3];
+  }
+
+  function syncUrl() {
+    try { history.replaceState(null, '', 'daily-log.html?d=' + anchor + '&range=' + mode); } catch (e) {}
+  }
+
+  /* ---------- 條目 ---------- */
+  function statusChip(id) {
+    var st = L.statusById(id);
+    if (!st) return '';
+    return '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass(id) + '" title="' + st.zh + '">' + st.label + '</span>';
+  }
+
+  function pendingChip() {
+    return '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass('parked') + '" title="還沒寫進 .md">未寫回</span>';
+  }
+
+  /* showProject：跨日期看的時候，條目自己要標是哪個專案 */
+  function rowHTML(e, idx, showProject) {
+    var kind = L.detectKind(e.url);
+    var id = 'log-entry-' + idx;
+    var head = showProject
+      ? '<span class="w-24 shrink-0 truncate font-mono text-muted dark:text-dmuted" title="' + esc(e.project) + '">' + esc(e.project) + '</span>'
+      : '<span class="h-2 w-2 shrink-0 rounded-full ' + (kind ? 'bg-accent dark:bg-daccent' : 'bg-muted dark:bg-dmuted') + '"></span>';
+    var tail = (e.pending ? pendingChip() : '') + statusChip(e.status);
+
+    if (kind) {
+      return '' +
+        '<a href="' + esc(e.url) + '" target="_blank" rel="noopener" data-od-id="' + id + '" title="' + esc(e.title) + '" ' +
+        'class="group flex items-center gap-3 ' + ROW + ' hover:bg-accentsoft/60 dark:hover:bg-daccentsoft/60">' +
+          head +
+          '<span class="min-w-0 flex-1 truncate underline-offset-4 group-hover:underline">' + esc(e.title) + '</span>' +
+          tail +
+          '<span class="shrink-0 rounded-full bg-accentsoft px-2 py-0.5 leading-tight text-muted group-hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:group-hover:text-dink">' + L.linkLabel(e.url) + '</span>' +
+        '</a>';
+    }
+    return '' +
+      '<div data-od-id="' + id + '" title="' + esc(e.title) + '" class="flex items-center gap-3 ' + ROW + '">' +
+        head +
+        '<span class="min-w-0 flex-1 truncate">' + esc(e.title) + '</span>' +
+        tail +
+      '</div>';
+  }
+
+  /* 單日：依專案分區 */
+  function projectSection(group) {
+    return '' +
+      '<section data-od-id="section-' + esc(group.project) + '" class="mb-6">' +
+        '<div class="flex items-baseline gap-2.5 px-3 pb-1.5">' +
+          '<h2 class="font-mono font-semibold tracking-tight">' + esc(group.project) + '</h2>' +
+          '<span class="tabular-nums text-muted dark:text-dmuted">' + group.items.length + '</span>' +
+        '</div>' +
+        '<div class="' + PANEL + '">' +
+          group.items.map(function (g) { return rowHTML(g.item, g.index, false); }).join('') +
+        '</div>' +
+      '</section>';
+  }
+
+  /* 跨日：一天一段，新的在上面 */
+  function daySection(code) {
+    var entries = L.entriesOf(code);
+    return '' +
+      '<section data-od-id="day-section-' + code + '" class="mb-6">' +
+        '<div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 px-3 pb-1.5">' +
+          '<button data-open-day="' + code + '" class="font-mono font-semibold tracking-tight underline-offset-4 hover:underline">' + L.fileName(code) + '</button>' +
+          '<span class="text-muted dark:text-dmuted">' + L.shortLabel(code) + '</span>' +
+          '<span class="tabular-nums text-muted dark:text-dmuted">' + entries.length + ' 項</span>' +
+          '<button data-goto="' + code + '" class="ml-auto shrink-0 text-muted underline-offset-4 hover:text-ink hover:underline dark:text-dmuted dark:hover:text-dink">只看這天</button>' +
+        '</div>' +
+        '<div class="' + PANEL + '">' +
+          entries.map(function (e, i) { return rowHTML(e, i, true); }).join('') +
+        '</div>' +
+      '</section>';
+  }
+
+  function emptyHTML() {
+    var r = range();
+    var what = isSingleDay()
+      ? '找不到 <span class="font-mono">' + L.fileName(r.from) + '</span>。'
+      : '<span class="font-mono">' + r.from + '</span> 到 <span class="font-mono">' + r.to + '</span> 之間沒有任何日誌檔。';
+    return '' +
+      '<div class="mt-4 rounded-xl border border-line bg-surface px-6 py-14 text-center dark:border-dline dark:bg-dsurface" data-od-id="empty-state">' +
+        '<p class="font-display text-xl font-semibold tracking-tight">這段期間沒有紀錄</p>' +
+        '<p class="mx-auto mt-2 max-w-md text-muted dark:text-dmuted">' + what + '請 Claude 幫你寫日誌，寫完這裡就會讀到。</p>' +
+        '<a href="todo-list.html" class="mt-5 inline-block rounded-full bg-accent px-4 py-2 font-medium text-white shadow-sm hover:opacity-90 dark:bg-daccent">先去寫 TODO</a>' +
+      '</div>';
+  }
+
+  /* ---------- 主渲染 ---------- */
+  function renderTabs() {
+    el.tabs.innerHTML = MODES.map(function (m) {
+      var on = m.id === mode;
+      return '<button data-mode="' + m.id + '" class="shrink-0 rounded-full px-3.5 py-1.5 leading-tight ' +
+        (on ? 'bg-surface font-semibold text-ink shadow-sm dark:bg-dline dark:text-dink'
+            : 'text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink') +
+        '">' + m.label + '</button>';
+    }).join('');
+    el.tabs.querySelectorAll('[data-mode]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var next = b.getAttribute('data-mode');
+        if (next === 'custom') {
+          var r = range();
+          custom = { from: r.from, to: r.to };
+        }
+        mode = next;
+        el.scroll.scrollTop = 0;
+        render();
+      });
+    });
+  }
+
+  function render() {
+    var r = range();
+    var codes = codesInRange();
+    var single = isSingleDay();
+    var total = codes.reduce(function (n, c) { return n + L.countOf(c); }, 0);
+
+    renderTabs();
+    el.customBox.classList.toggle('hidden', mode !== 'custom');
+    el.customBox.classList.toggle('flex', mode === 'custom');
+    el.fromInput.value = codeToInput(r.from);
+    el.toInput.value = codeToInput(r.to);
+
+    el.note.textContent = mode === 'all'
+      ? '讀到的每一天'
+      : single ? '← → 換日' : '← → 整段前後移動';
+
+    el.code.textContent = single ? r.from : r.from + ' – ' + r.to;
+    el.long.textContent = single
+      ? L.longLabel(r.from) + (r.from === L.today() ? '（今天）' : '')
+      : L.daysBetween(r.from, r.to) + 1 + ' 天，' + codes.length + ' 天有紀錄';
+    el.file.textContent = single ? L.fileName(r.from) : '';
+    el.file.classList.toggle('hidden', !single);
+    el.count.textContent = total > 0 ? '共 ' + total + ' 項' : '沒有紀錄';
+    el.board.setAttribute('href', single ? 'board.html?d=' + r.from : 'board.html');
+
+    var crumb = document.querySelector('[data-od-id="crumb"]');
+    if (crumb) crumb.textContent = single ? L.fileName(r.from) : r.from + ' – ' + r.to;
+
+    if (!codes.length) {
+      el.list.innerHTML = emptyHTML();
+    } else if (single) {
+      el.list.innerHTML = L.grouped(r.from).map(projectSection).join('');
+    } else {
+      el.list.innerHTML = codes.map(daySection).join('');
+    }
+
+    el.list.querySelectorAll('[data-goto]').forEach(function (b) {
+      b.addEventListener('click', function () { mode = 'day'; go(b.getAttribute('data-goto')); });
+    });
+    el.list.querySelectorAll('[data-open-day]').forEach(function (b) {
+      b.addEventListener('click', function () { L.openLogFile(b.getAttribute('data-open-day')); });
+    });
+
+    if (!el.cal.classList.contains('hidden')) renderCal();
+    syncUrl();
+  }
+
+  /* ---------- 日曆彈出 ---------- */
+  function renderCal() {
+    var r = range();
+    var p = L.parts(r.to);
+    if (!calMonth) calMonth = { roc: p.roc, month: p.month };
+    var year = calMonth.roc + 1911;
+    var days = new Date(year, calMonth.month, 0).getDate();
+    var lead = new Date(year, calMonth.month - 1, 1).getDay();
+
+    var cells = '';
+    for (var i = 0; i < lead; i++) cells += '<span></span>';
+    for (var d = 1; d <= days; d++) {
+      var code = String(calMonth.roc) + L.pad(calMonth.month, 2) + L.pad(d, 2);
+      var n = L.countOf(code);
+      var inRange = code >= r.from && code <= r.to;
+      var isEnd = code === r.to;
+      var cls = isEnd
+        ? 'bg-accent font-semibold text-white dark:bg-daccent'
+        : inRange
+          ? 'bg-accentsoft font-medium text-ink dark:bg-daccentsoft dark:text-dink'
+          : n > 0
+            ? 'font-medium text-ink hover:bg-accentsoft dark:text-dink dark:hover:bg-daccentsoft'
+            : 'text-muted hover:bg-accentsoft dark:text-dmuted dark:hover:bg-daccentsoft';
+      cells += '<button data-goto="' + code + '" class="relative grid h-9 place-items-center rounded-full tabular-nums ' + cls + '">' + d +
+        (n > 0 && !isEnd ? '<span class="absolute bottom-1 h-1 w-1 rounded-full bg-accent dark:bg-daccent"></span>' : '') +
+        '</button>';
+    }
+
+    el.cal.innerHTML = '' +
+      '<div class="mb-2 flex items-center gap-2">' +
+        '<button data-cal="-1" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="上個月">‹</button>' +
+        '<span class="flex-1 text-center font-semibold tabular-nums">民國' + calMonth.roc + '年 ' + calMonth.month + '月</span>' +
+        '<button data-cal="1" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="下個月">›</button>' +
+      '</div>' +
+      '<div class="grid grid-cols-7 gap-0.5 text-center text-muted dark:text-dmuted">' +
+        L.WEEKDAYS.map(function (w) { return '<span class="py-1">' + w + '</span>'; }).join('') +
+      '</div>' +
+      '<div class="grid grid-cols-7 gap-0.5">' + cells + '</div>' +
+      '<p class="mt-2 text-muted dark:text-dmuted">' + (isSingleDay() ? '選一天' : '選這段的結束日') + '</p>';
+
+    el.cal.querySelectorAll('[data-cal]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var m = calMonth.month + Number(b.getAttribute('data-cal'));
+        var y = calMonth.roc;
+        if (m < 1) { m = 12; y -= 1; }
+        if (m > 12) { m = 1; y += 1; }
+        calMonth = { roc: y, month: m };
+        renderCal();
+      });
+    });
+    el.cal.querySelectorAll('[data-goto]').forEach(function (b) {
+      b.addEventListener('click', function () { closeCal(); go(b.getAttribute('data-goto')); });
+    });
+  }
+
+  function openCal() {
+    calMonth = null;
+    el.cal.classList.remove('hidden');
+    document.getElementById('btn-cal').setAttribute('aria-expanded', 'true');
+    renderCal();
+  }
+  function closeCal() {
+    el.cal.classList.add('hidden');
+    document.getElementById('btn-cal').setAttribute('aria-expanded', 'false');
+  }
+
+  /* 換到某一天：單日就是跳那天，跨日是把整段的結束日挪過去 */
+  function go(code) {
+    if (mode === 'custom') {
+      var len = L.daysBetween(custom.from, custom.to);
+      custom = { from: L.shift(code, -len), to: code };
+    }
+    anchor = code;
+    el.scroll.scrollTop = 0;
+    render();
+  }
+
+  /* 往前／往後：單日一天一天走，跨日整段走 */
+  function step(dir) {
+    if (mode === 'all') return;
+    var r = range();
+    var len = L.daysBetween(r.from, r.to) + 1;
+    go(L.shift(anchor, dir * len));
+  }
+
+  document.getElementById('btn-prev').addEventListener('click', function () { step(-1); });
+  document.getElementById('btn-next').addEventListener('click', function () { step(1); });
+  document.getElementById('btn-today').addEventListener('click', function () { go(L.today()); });
+  el.file.addEventListener('click', function () { L.openLogFile(range().from); });
+  document.getElementById('btn-cal').addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (el.cal.classList.contains('hidden')) openCal(); else closeCal();
+  });
+  document.addEventListener('click', function (e) {
+    if (!el.cal.classList.contains('hidden') && !el.cal.contains(e.target)) closeCal();
+  });
+
+  el.fromInput.addEventListener('change', function () {
+    var c = inputToCode(this.value);
+    if (c) { custom.from = c; render(); }
+  });
+  el.toInput.addEventListener('change', function () {
+    var c = inputToCode(this.value);
+    if (c) { custom.to = c; anchor = c; render(); }
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { closeCal(); return; }
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    if (e.key === 'ArrowLeft') step(-1);
+    if (e.key === 'ArrowRight') step(1);
+  });
+
+  render();
+});
+</script>
+</body>
+</html>

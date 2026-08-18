@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>月曆 — 每日工作日誌</title>
+<link href="css/fonts.css" rel="stylesheet">
+<link href="css/app.css" rel="stylesheet">
+<script src="vendor/tailwind.js"></script>
+<script src="js/tailwind-config.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/store.js"></script>
+<script src="js/shell.js"></script>
+</head>
+<body class="flex h-screen flex-col overflow-hidden bg-paper text-ink antialiased dark:bg-dpaper dark:text-dink font-sans text-base" data-od-id="calendar-home">
+
+<div data-shell="topbar" data-tab="index.html" data-crumb=""></div>
+
+<div class="flex min-h-0 flex-1 flex-col bg-surface dark:bg-dsurface">
+
+  <!-- 標題列：大標題在左，換月在右（照 macOS 行事曆） -->
+  <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-3 pt-4 md:px-6" data-od-id="month-toolbar">
+    <h1 id="month-title" class="font-display shrink-0 text-3xl font-bold tabular-nums tracking-tightest md:text-4xl" data-od-id="month-title"></h1>
+    <span id="month-sub" class="shrink-0 self-end pb-1 text-muted dark:text-dmuted"></span>
+    <span id="month-count" class="ml-auto shrink-0 tabular-nums text-muted dark:text-dmuted"></span>
+    <div class="flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface p-1 shadow-sm dark:border-dline dark:bg-dpaper" data-od-id="month-nav">
+      <button id="btn-prev" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="上個月">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <button id="btn-this" class="rounded-full px-3 py-1 leading-tight text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink">今天</button>
+      <button id="btn-next" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="下個月">
+        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 圖例：七種狀態＝七種行事曆 -->
+  <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-3 md:px-6" id="legend" data-od-id="calendar-legend"></div>
+
+  <!-- 星期列：靠右對齊，跟格子裡的日期同一條直線 -->
+  <div class="grid shrink-0 grid-cols-7 border-b border-line px-0 pb-1.5 dark:border-dline" data-od-id="weekday-row"></div>
+
+  <!-- 月格：整片髮絲線，沒有卡片、沒有圓角 -->
+  <div class="min-h-0 flex-1 overflow-y-auto">
+    <div id="grid" class="grid h-full grid-cols-7 auto-rows-[minmax(88px,1fr)] border-l border-line dark:border-dline sm:auto-rows-[minmax(104px,1fr)]" data-od-id="month-grid"></div>
+  </div>
+
+</div>
+
+<script>
+window.Log.ready(function () {
+  var L = window.Log;
+  var todayCode = L.today();
+  var t = L.parts(todayCode);
+  var view = { roc: t.roc, month: t.month };
+
+  var grid = document.getElementById('grid');
+
+  document.querySelector('[data-od-id="weekday-row"]').innerHTML =
+    L.WEEKDAYS.map(function (w, i) {
+      return '<span class="truncate px-2 pt-2 text-right ' +
+        (i === 0 || i === 6 ? 'text-muted dark:text-dmuted' : 'text-muted dark:text-dmuted') + '">' + w + '</span>';
+    }).join('');
+
+  document.getElementById('legend').innerHTML =
+    '<span class="shrink-0 text-muted dark:text-dmuted">狀態</span>' +
+    L.statuses().map(function (s) {
+    return '<span class="flex shrink-0 items-center gap-1.5 text-muted dark:text-dmuted">' +
+      '<span class="h-2.5 w-2.5 rounded-full ' + L.statusDotClass(s.id) + '"></span>' + s.label + '</span>';
+  }).join('') +
+  '<span class="flex shrink-0 items-center gap-1.5 text-muted dark:text-dmuted">' +
+    '<span class="h-2.5 w-2.5 rounded-full bg-muted dark:bg-dmuted"></span>沒標狀態</span>';
+
+  function dot(id) {
+    return '<span class="h-2 w-2 shrink-0 rounded-full ' +
+      (id ? L.statusDotClass(id) : 'bg-muted dark:bg-dmuted') + '"></span>';
+  }
+
+  function cell(date, inMonth) {
+    var code = L.toCode(date);
+    var d = date.getDate();
+    var n = L.countOf(code);
+    var counts = L.dayStatusCounts(code);
+    var order = L.statuses().map(function (s) { return s.id; }).concat(['none']);
+    var rows = order.filter(function (k) { return counts[k]; });
+    var shown = rows.slice(0, 3);
+    var rest = rows.length - shown.length;
+    var isToday = code === todayCode;
+
+    var num = isToday
+      ? '<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accent tabular-nums font-semibold text-white dark:bg-daccent">' + d + '</span>'
+      : '<span class="shrink-0 tabular-nums ' +
+          (inMonth ? (n > 0 ? 'font-semibold' : '') : 'text-muted dark:text-dmuted') + '">' + d + '</span>';
+
+    return '' +
+      '<button data-goto="' + code + '" data-od-id="day-' + code + '" ' +
+        'class="flex min-w-0 flex-col gap-0.5 overflow-hidden border-b border-r border-line px-1.5 pb-1.5 pt-1 text-left hover:bg-accentsoft/70 dark:border-dline dark:hover:bg-daccentsoft/70 ' +
+        (inMonth ? 'bg-surface dark:bg-dsurface' : 'bg-paper dark:bg-dpaper') + '">' +
+        '<span class="flex shrink-0 items-center gap-1">' +
+          '<span class="hidden min-w-0 truncate font-mono text-muted dark:text-dmuted lg:inline">' + code + '</span>' +
+          '<span class="ml-auto flex h-7 items-center">' + num + '</span>' +
+        '</span>' +
+        // 平板以上：像行事曆的事件列
+        '<span class="hidden min-h-0 flex-col gap-0.5 sm:flex">' +
+          shown.map(function (k) {
+            var st = k === 'none' ? null : L.statusById(k);
+            return L.eventRow(st ? st.id : null, st ? st.label : '沒標狀態', counts[k]);
+          }).join('') +
+          (rest > 0 ? '<span class="px-1.5 text-muted dark:text-dmuted">還有 ' + rest + ' 種</span>' : '') +
+        '</span>' +
+        // 手機：欄位太窄，只留圓點與件數
+        (n > 0
+          ? '<span class="mt-auto flex flex-wrap items-center gap-1 sm:hidden">' +
+              rows.slice(0, 4).map(function (k) { return dot(k === 'none' ? null : k); }).join('') +
+              '<span class="tabular-nums text-muted dark:text-dmuted">' + n + '</span>' +
+            '</span>'
+          : '') +
+      '</button>';
+  }
+
+  function render() {
+    var year = view.roc + 1911;
+    var first = new Date(year, view.month - 1, 1);
+    var start = new Date(year, view.month - 1, 1 - first.getDay());
+    var total = 0;
+    var recorded = 0;
+    var cells = '';
+
+    for (var i = 0; i < 42; i++) {
+      var date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      var inMonth = date.getMonth() === view.month - 1 && date.getFullYear() === year;
+      if (inMonth) {
+        var n = L.countOf(L.toCode(date));
+        total += n;
+        if (n > 0) recorded += 1;
+      }
+      cells += cell(date, inMonth);
+    }
+
+    grid.innerHTML = cells;
+    grid.querySelectorAll('[data-goto]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        location.href = 'daily-log.html?d=' + b.getAttribute('data-goto') + '&range=day';
+      });
+    });
+
+    document.getElementById('month-title').textContent = year + '年' + view.month + '月';
+    document.getElementById('month-sub').textContent = '民國' + view.roc + '年';
+    document.getElementById('month-count').textContent = total > 0
+      ? recorded + ' 天有紀錄 · 共 ' + total + ' 筆'
+      : '這個月沒有紀錄';
+
+    var crumb = document.querySelector('[data-od-id="crumb"]');
+    if (crumb) crumb.textContent = year + '年' + view.month + '月';
+  }
+
+  function shiftMonth(delta) {
+    var m = view.month + delta;
+    var y = view.roc;
+    if (m < 1) { m = 12; y -= 1; }
+    if (m > 12) { m = 1; y += 1; }
+    view = { roc: y, month: m };
+    render();
+  }
+
+  document.getElementById('btn-prev').addEventListener('click', function () { shiftMonth(-1); });
+  document.getElementById('btn-next').addEventListener('click', function () { shiftMonth(1); });
+  document.getElementById('btn-this').addEventListener('click', function () {
+    view = { roc: t.roc, month: t.month };
+    render();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
+    if (e.key === 'ArrowLeft') shiftMonth(-1);
+    if (e.key === 'ArrowRight') shiftMonth(1);
+  });
+
+  render();
+});
+</script>
+</body>
+</html>

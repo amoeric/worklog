@@ -1,0 +1,134 @@
+/* ============================================================
+   每日工作日誌 — 顏色與字體基礎（colors_and_type.css）
+
+   來源證據：
+   - js/tailwind-config.js  ← 全部色票的原始定義
+   - css/fonts.css          ← Cal Sans @font-face
+   - brand-spec.md          ← 六個核心 token 與七個狀態徽章的對照表
+
+   色票是 cal.diy `packages/config/theme/tokens.css` 的 hsla() 直接換算成 hex，
+   沒有再調過。要改色請回頭改來源，不要在這裡微調。
+
+   用法：
+     <link rel="stylesheet" href="colors_and_type.css">
+     <link rel="stylesheet" href="tokens.css">
+   深色模式：在 <html> 上加 data-theme="dark"（js/theme.js 會同時加 class="dark"）。
+   ============================================================ */
+
+/* ---------- 字檔：Cal Sans 放在專案內，不連外 ---------- */
+@font-face {
+  font-family: 'Cal Sans';
+  src: url('fonts/CalSans-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light;
+
+  /* ---------- 六個核心顏色 ---------- */
+  --bg: #f6f7f9;          /* 頁面底、側邊欄 */
+  --surface: #ffffff;     /* 內容面板 */
+  --fg: #070a0d;          /* 主要文字 */
+  --muted: #6b7280;       /* 次要文字 */
+  --border: #e5e7eb;      /* 髮絲分隔線 */
+  --accent: #111827;      /* 主要動作＝近黑，不是彩色 */
+
+  /* 兩個延伸角色 */
+  --accent-fg: #ffffff;   /* 主要按鈕上的文字 */
+  --accent-soft: #eeeff2; /* 滑過的淺底 */
+
+  /* ---------- 七個工作狀態（扁平色塊，邊框色＝底色） ---------- */
+  --st-todo-fg: #3c3e44;       --st-todo-bg: #eeeff2;
+  --st-proposing-fg: #40067a;  --st-proposing-bg: #dfd4fc;
+  --st-parked-fg: #7b5d04;     --st-parked-bg: #fef9c3;
+  --st-building-fg: #06327a;   --st-building-bg: #d4e3fc;
+  --st-review-fg: #7c3403;     --st-review-bg: #ffedd6;
+  --st-archived-fg: #9ca3af;   --st-archived-bg: #f6f7f9;
+  --st-done-fg: #126d34;       --st-done-bg: #e4f7f3;
+
+  /* ---------- 字族 ---------- */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, system-ui,
+               'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  --font-display: 'Cal Sans', 'Inter', -apple-system, system-ui,
+                  'Noto Sans TC', 'PingFang TC', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* ---------- 字級：下限是 1rem，沒有更小的一級 ---------- */
+  --text-base: 1rem;        /* 內文、清單列、meta、徽章，全部同一級 */
+  --text-title: 1.25rem;    /* 頁面標題（狀態總覽 h1、空狀態標題） */
+  --text-heading: 1.5rem;   /* 日期碼、月份標題、工作項目標題 */
+  --text-display: 1.875rem; /* 今天的民國日期碼，只有總覽頁用 */
+
+  --leading-tight: 1.1;
+  --leading-snug: 1.35;
+  --leading-normal: 1.6;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  --tracking-tight: -0.025em;   /* Tailwind tracking-tight */
+  --tracking-tightest: -0.02em; /* 專案自訂：只給大字用 */
+}
+
+[data-theme='dark'],
+.dark {
+  color-scheme: dark;
+
+  --bg: #0f0f0f;
+  --surface: #171717;
+  --fg: #fafafa;
+  --muted: #a3a3a3;
+  --border: #262626;
+  --accent: #ffffff;
+  --accent-fg: #0f0f0f;
+  --accent-soft: #262626;
+
+  --st-todo-fg: #d4d4d4;       --st-todo-bg: #262626;
+  --st-proposing-fg: #dfd4fc;  --st-proposing-bg: #1d0a6b;
+  --st-parked-fg: #fef9c3;     --st-parked-bg: #733f12;
+  --st-building-fg: #d4e3fc;   --st-building-bg: #17209b;
+  --st-review-fg: #ffedd6;     --st-review-bg: #67250f;
+  --st-archived-fg: #737373;   --st-archived-bg: #171717;
+  --st-done-fg: #e4f7f3;       --st-done-bg: #096738;
+}
+
+/* ---------- 基礎排版 ---------- */
+html {
+  font-size: 100%; /* 1rem = 16px，不要縮 */
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 中文沒有 Cal Sans 字形，會退回 Inter → PingFang TC，
+   所以中文標題看起來仍是系統字。這是預期行為，不是 bug。 */
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-snug);
+  margin: 0;
+}
+
+h1 { font-size: var(--text-title); }
+h2 { font-size: var(--text-base); }
+h3 { font-size: var(--text-base); }
+
+code, kbd, samp, pre { font-family: var(--font-mono); font-size: var(--text-base); }
+
+a { color: inherit; }
+
+/* 數字一律等寬對齊；識別碼、專案名、檔名用等寬字 */
+.tabular { font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--font-mono); }
+.muted { color: var(--muted); }

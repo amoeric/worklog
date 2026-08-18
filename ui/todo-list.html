@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TODO — 每日工作日誌</title>
+<link href="css/fonts.css" rel="stylesheet">
+<link href="css/app.css" rel="stylesheet">
+<script src="vendor/tailwind.js"></script>
+<script src="js/tailwind-config.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/store.js"></script>
+<script src="js/shell.js"></script>
+</head>
+<body class="flex h-screen flex-col overflow-hidden bg-paper text-ink antialiased dark:bg-dpaper dark:text-dink font-sans text-base" data-od-id="todo-page">
+
+<div data-shell="topbar" data-tab="todo-list.html" data-crumb="TODO"></div>
+
+<div class="flex min-h-0 flex-1 flex-col">
+
+  <div class="flex min-h-0 flex-1 flex-col">
+
+    <!-- 頁首只留標題與計數，輸入區在清單下面 -->
+    <header class="shrink-0 border-b border-line dark:border-dline" data-od-id="todo-header">
+      <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 pb-3 pt-4 md:px-6">
+        <h1 class="font-display shrink-0 text-3xl font-bold tracking-tightest md:text-4xl">TODO</h1>
+        <span id="counts" class="shrink-0 tabular-nums text-muted dark:text-dmuted"></span>
+        <span class="ml-auto min-w-0 truncate text-muted dark:text-dmuted">存在 app 裡，按「加到今日日誌」才會寫進今天的 md</span>
+      </div>
+    </header>
+
+    <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 md:px-6">
+      <div class="w-full">
+        <div id="open-list" data-od-id="todo-open"></div>
+        <div id="done-list" class="mt-8" data-od-id="todo-done"></div>
+      </div>
+    </div>
+
+    <!-- 新增：就地打字，不跳頁。放在清單下面，永遠在同一個位置 -->
+    <footer class="shrink-0 border-t border-line bg-surface px-4 py-3 md:px-6 dark:border-dline dark:bg-dsurface" data-od-id="todo-composer">
+      <div class="flex flex-col gap-2 sm:flex-row">
+        <input id="t-text" type="text" placeholder="下一件要做的事" class="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 shadow-sm placeholder:text-muted focus:border-accent focus:outline-none dark:border-dline dark:bg-dpaper dark:placeholder:text-dmuted dark:focus:border-daccent">
+        <button id="t-add" class="shrink-0 rounded-lg bg-accent px-4 py-2 font-medium text-white shadow-sm hover:opacity-90 dark:bg-daccent">加入</button>
+      </div>
+      <div class="mt-2 flex flex-col gap-2 sm:flex-row">
+        <select id="t-project" class="shrink-0 rounded-lg border border-line bg-surface px-3 py-2 shadow-sm font-mono focus:border-accent focus:outline-none dark:border-dline dark:bg-dpaper dark:focus:border-daccent sm:w-40"></select>
+        <input id="t-newproject" type="text" placeholder="新專案名稱" class="hidden shrink-0 rounded-lg border border-line bg-surface px-3 py-2 shadow-sm font-mono placeholder:font-sans placeholder:text-muted focus:border-accent focus:outline-none dark:border-dline dark:bg-dpaper dark:placeholder:text-dmuted sm:w-40">
+        <input id="t-url" type="text" placeholder="MR 或議題網址（選填）" class="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 shadow-sm font-mono placeholder:font-sans placeholder:text-muted focus:border-accent focus:outline-none dark:border-dline dark:bg-dpaper dark:placeholder:text-dmuted dark:focus:border-daccent">
+        <select id="t-status" class="shrink-0 rounded-lg border border-line bg-surface px-3 py-2 shadow-sm focus:border-accent focus:outline-none dark:border-dline dark:bg-dpaper dark:focus:border-daccent sm:w-40"></select>
+      </div>
+      <p id="flash" class="mt-2 text-muted dark:text-dmuted">寫下來就好，之後要貼進日誌時再選狀態。</p>
+    </footer>
+  </div>
+</div>
+
+<script>
+window.Log.ready(function () {
+  var L = window.Log;
+
+  var elText = document.getElementById('t-text');
+  var elProject = document.getElementById('t-project');
+  var elNewProject = document.getElementById('t-newproject');
+  var elUrl = document.getElementById('t-url');
+  var elStatus = document.getElementById('t-status');
+  var elFlash = document.getElementById('flash');
+
+  /* 群組內嵌清單：白面板 + 髮絲線分隔 */
+  var ROW = 'border-b border-line px-3 py-2 last:border-b-0 dark:border-dline';
+
+  /* 編輯中的那一筆（一次只會有一筆），null 代表沒有人在編輯 */
+  var editingId = null;
+
+  /* 編輯欄位沿用輸入區的寫法，這樣兩邊看起來是同一組控制項 */
+  var FIELD = 'rounded-lg border border-line bg-surface px-3 py-2 shadow-sm focus:border-accent focus:outline-none dark:border-dline dark:bg-dpaper dark:focus:border-daccent';
+
+  /* 注音選字時按的 Enter 是「確認選字」，不是「送出」。三層防護：
+       1. e.isComposing —— 標準做法
+       2. e.keyCode === 229 —— 舊環境組字中的 keydown 都是這個碼
+       3. compositionend 之後極短的時間內 —— WKWebView（app 用的就是這個）
+          會先送 compositionend 再送 keydown，那時 isComposing 已經變 false，
+          只剩時間差擋得掉；真的要送出時手指離開再按，一定超過這個門檻
+     每個輸入框各自記自己的狀態，回傳的函式在 keydown 開頭先問一次。 */
+  function imeGuard(input) {
+    var composing = false;
+    var endedAt = 0;
+    input.addEventListener('compositionstart', function () { composing = true; });
+    input.addEventListener('compositionend', function () { composing = false; endedAt = Date.now(); });
+    return function (e) {
+      return composing || e.isComposing || e.keyCode === 229 || (Date.now() - endedAt) < 120;
+    };
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  var FLASH_HINT = '寫下來就好，之後要貼進日誌時再選狀態。';
+
+  /* 提示一律走右上角的通知，頁尾這行維持說明文字 */
+  function flash(msg, kind) {
+    if (window.Shell && window.Shell.toast) window.Shell.toast(msg, kind);
+    elFlash.textContent = FLASH_HINT;
+    elFlash.className = 'mt-2 text-muted dark:text-dmuted';
+  }
+
+  function fillSelects() {
+    elProject.innerHTML = L.projects().map(function (p) {
+      return '<option value="' + esc(p) + '">' + esc(p) + '</option>';
+    }).join('') + '<option value="__new__">＋ 新增專案…</option>';
+
+    elStatus.innerHTML = '<option value="">不標狀態</option>' + L.statuses().map(function (s) {
+      return '<option value="' + s.id + '">' + s.label + '（' + s.zh + '）</option>';
+    }).join('');
+  }
+
+  /* 預設選「其他」——多數隨手記都不屬於特定專案 */
+  function selectProject(name) {
+    for (var i = 0; i < elProject.options.length; i++) {
+      if (elProject.options[i].value === name) { elProject.selectedIndex = i; return true; }
+    }
+    return false;
+  }
+
+  function statusChip(id) {
+    var st = L.statusById(id);
+    if (!st) return '';
+    return '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass(id) + '" title="日誌檔裡會寫成 ' + st.zh + '">' + st.label + '</span>';
+  }
+
+  function row(t) {
+    var kind = L.detectKind(t.url);
+    return '' +
+      '<div class="flex flex-wrap items-center gap-x-3 gap-y-2 ' + ROW + '" data-od-id="todo-' + t.id + '">' +
+        '<label class="flex shrink-0 cursor-pointer items-center py-1.5 pr-1">' +
+          '<input type="checkbox" data-toggle="' + t.id + '"' + (t.done ? ' checked' : '') + ' class="h-5 w-5 cursor-pointer accent-accent dark:accent-daccent" aria-label="切換完成">' +
+        '</label>' +
+        '<span class="min-w-0 flex-1 truncate ' + (t.done ? 'text-muted line-through dark:text-dmuted' : '') + '" title="' + esc(t.text) + '">' + esc(t.text) + '</span>' +
+        (t.project ? '<span class="shrink-0 font-mono text-muted dark:text-dmuted">' + esc(t.project) + '</span>' : '') +
+        statusChip(t.status) +
+        (kind ? '<a href="' + esc(t.url) + '" target="_blank" rel="noopener" class="shrink-0 rounded-full bg-accentsoft px-2 py-0.5 leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink">' + L.linkLabel(t.url) + '</a>' : '') +
+        '<span class="flex shrink-0 items-center gap-2">' +
+          '<button data-edit="' + t.id + '" class="text-muted hover:text-accent dark:text-dmuted dark:hover:text-daccent" title="改文字、專案、網址、狀態">編輯</button>' +
+          '<button data-append="' + t.id + '" class="rounded-full border border-line px-2.5 py-0.5 leading-tight shadow-sm hover:border-accent hover:text-accent disabled:opacity-50 dark:border-dline dark:hover:border-daccent dark:hover:text-daccent" title="把這一行寫進今天的 md">加到今日日誌</button>' +
+          '<button data-copy="' + t.id + '" class="text-muted hover:text-accent dark:text-dmuted dark:hover:text-daccent">複製 md</button>' +
+          '<button data-del="' + t.id + '" class="text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink">刪除</button>' +
+        '</span>' +
+      '</div>';
+  }
+
+  /* 就地展開成編輯列：整列換成輸入框，位置不動、其他列照舊。
+     取消不用另外記舊值——資料還沒改，重畫一次就回到原本的樣子。 */
+  function editRow(t) {
+    var projectOptions = '<option value=""' + (t.project ? '' : ' selected') + '>不標專案</option>' +
+      L.projects().map(function (p) {
+        return '<option value="' + esc(p) + '"' + (p === t.project ? ' selected' : '') + '>' + esc(p) + '</option>';
+      }).join('') +
+      '<option value="__new__">＋ 新增專案…</option>';
+
+    var statusOptions = '<option value=""' + (t.status ? '' : ' selected') + '>不標狀態</option>' +
+      L.statuses().map(function (s) {
+        return '<option value="' + s.id + '"' + (s.id === t.status ? ' selected' : '') + '>' + s.label + '（' + s.zh + '）</option>';
+      }).join('');
+
+    return '' +
+      '<div class="flex flex-col gap-2 ' + ROW + '" data-od-id="todo-edit-' + t.id + '">' +
+        '<input type="text" data-e-text="' + t.id + '" value="' + esc(t.text) + '" placeholder="要做的事" class="min-w-0 w-full ' + FIELD + ' placeholder:text-muted dark:placeholder:text-dmuted">' +
+        '<div class="flex flex-col gap-2 sm:flex-row">' +
+          '<select data-e-project="' + t.id + '" class="shrink-0 font-mono ' + FIELD + ' sm:w-40">' + projectOptions + '</select>' +
+          '<input type="text" data-e-newproject="' + t.id + '" placeholder="新專案名稱" class="hidden shrink-0 font-mono ' + FIELD + ' placeholder:font-sans placeholder:text-muted dark:placeholder:text-dmuted sm:w-40">' +
+          '<input type="text" data-e-url="' + t.id + '" value="' + esc(t.url) + '" placeholder="MR 或議題網址（選填）" class="min-w-0 flex-1 font-mono ' + FIELD + ' placeholder:font-sans placeholder:text-muted dark:placeholder:text-dmuted">' +
+          '<select data-e-status="' + t.id + '" class="shrink-0 ' + FIELD + ' sm:w-40">' + statusOptions + '</select>' +
+        '</div>' +
+        '<div class="flex items-center gap-2">' +
+          '<button data-e-save="' + t.id + '" class="rounded-full bg-accent px-3 py-0.5 leading-tight font-medium text-white shadow-sm hover:opacity-90 dark:bg-daccent">儲存</button>' +
+          '<button data-e-cancel="' + t.id + '" class="rounded-full border border-line px-3 py-0.5 leading-tight shadow-sm hover:border-accent hover:text-accent dark:border-dline dark:hover:border-daccent dark:hover:text-daccent">取消</button>' +
+          '<span class="text-muted dark:text-dmuted">Enter 儲存 · Esc 取消</span>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* 一列要畫成一般樣子還是編輯樣子 */
+  function rowOf(t) {
+    return t.id === editingId ? editRow(t) : row(t);
+  }
+
+  function startEdit(id) {
+    editingId = id;
+    render();
+    var input = document.querySelector('[data-e-text="' + id + '"]');
+    if (input) { input.focus(); input.setSelectionRange(input.value.length, input.value.length); }
+  }
+
+  function cancelEdit() {
+    editingId = null;
+    render();
+  }
+
+  function saveEdit(id) {
+    var elt = document.querySelector('[data-e-text="' + id + '"]');
+    if (!elt) return;
+    var text = elt.value.trim();
+    if (!text) { elt.focus(); flash('內容不能是空的。', 'error'); return; }
+
+    var sel = document.querySelector('[data-e-project="' + id + '"]');
+    var project = sel.value === '__new__'
+      ? document.querySelector('[data-e-newproject="' + id + '"]').value.trim()
+      : sel.value;
+
+    L.updateTodo(id, {
+      text: text,
+      project: project,
+      url: document.querySelector('[data-e-url="' + id + '"]').value.trim(),
+      status: document.querySelector('[data-e-status="' + id + '"]').value,
+    });
+
+    editingId = null;
+    /* 專案清單是從 TODO 推出來的，改完要重生一次，輸入區才看得到新專案 */
+    var keep = elProject.value;
+    fillSelects();
+    if (!selectProject(keep)) selectProject('其他');
+    elNewProject.classList.toggle('hidden', elProject.value !== '__new__');
+    render();
+    flash('改好了。');
+  }
+
+  /* 編輯列的事件：Enter＝儲存、Esc＝取消，一樣要擋組字中的 Enter */
+  function bindEditRow() {
+    if (!editingId) return;
+    var id = editingId;
+
+    document.querySelector('[data-e-save="' + id + '"]').addEventListener('click', function () { saveEdit(id); });
+    document.querySelector('[data-e-cancel="' + id + '"]').addEventListener('click', cancelEdit);
+
+    var sel = document.querySelector('[data-e-project="' + id + '"]');
+    var newProject = document.querySelector('[data-e-newproject="' + id + '"]');
+    sel.addEventListener('change', function () {
+      var isNew = sel.value === '__new__';
+      newProject.classList.toggle('hidden', !isNew);
+      if (isNew) newProject.focus();
+    });
+
+    [document.querySelector('[data-e-text="' + id + '"]'), document.querySelector('[data-e-url="' + id + '"]'), newProject].forEach(function (input) {
+      var composing = imeGuard(input);
+      input.addEventListener('keydown', function (e) {
+        if (composing(e)) return;
+        if (e.key === 'Enter') { e.preventDefault(); saveEdit(id); }
+        else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
+      });
+    });
+  }
+
+  /* 按下「加到今日日誌」：真的寫進今天的 <民國7碼>.md，
+     寫完重讀資料（日誌頁與月曆立刻看得到），那筆 TODO 標成完成、不刪掉。 */
+  function appendToToday(btn) {
+    var id = btn.getAttribute('data-append');
+    var t = L.todos().filter(function (x) { return x.id === id; })[0];
+    if (!t) return;
+    var label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '寫入中…';
+
+    L.appendEntry(t).then(function (r) {
+      flash(r.duplicate
+        ? '今天的 ' + r.file + ' 裡已經有一模一樣的一行，沒有再寫一次：' + r.line
+        : '已寫進 ' + r.file + ' 的「' + r.project + '」：' + r.line);
+      return L.markTodoDone(id).then(function () { return L.reload(); });
+    }).then(function () {
+      render();
+    }).catch(function (e) {
+      btn.disabled = false;
+      btn.textContent = label;
+      flash('寫不進去：' + (e && e.message ? e.message : e), 'error');
+    });
+  }
+
+  function render() {
+    var all = L.todos();
+    var open = all.filter(function (t) { return !t.done; });
+    var done = all.filter(function (t) { return t.done; });
+
+    document.getElementById('counts').textContent = '未完成 ' + open.length + ' 件 · 已完成 ' + done.length + ' 件';
+
+    document.getElementById('open-list').innerHTML = open.length
+      ? '<section>' +
+          '<div class="flex items-baseline gap-2.5 px-3 pb-1.5">' +
+            '<h2 class="font-semibold tracking-tight">要做的</h2>' +
+            '<span class="tabular-nums text-muted dark:text-dmuted">' + open.length + '</span>' +
+          '</div>' +
+          '<div class="overflow-hidden rounded-xl border border-line bg-surface dark:border-dline dark:bg-dsurface">' + open.map(rowOf).join('') + '</div>' +
+        '</section>'
+      : '<div class="rounded-xl border border-line bg-surface px-6 py-12 text-center dark:border-dline dark:bg-dsurface" data-od-id="todo-empty">' +
+          '<p class="font-display text-xl font-semibold tracking-tight">沒有待辦</p>' +
+          '<p class="mt-2 text-muted dark:text-dmuted">想到什麼就打在下面那一行，Enter 就進來了。</p>' +
+        '</div>';
+
+    document.getElementById('done-list').innerHTML = done.length
+      ? '<section>' +
+          '<div class="flex flex-wrap items-baseline gap-2.5 px-3 pb-1.5">' +
+            '<h2 class="font-semibold tracking-tight">做完了</h2>' +
+            '<span class="tabular-nums text-muted dark:text-dmuted">' + done.length + '</span>' +
+            '<span class="ml-auto text-muted dark:text-dmuted">按「加到今日日誌」寫進今天的 md，或按「複製 md」拿那一行</span>' +
+          '</div>' +
+          '<div class="overflow-hidden rounded-xl border border-line dark:border-dline ' + L.groupClass('done') + '">' + done.map(rowOf).join('') + '</div>' +
+        '</section>'
+      : '';
+
+    document.querySelectorAll('[data-toggle]').forEach(function (b) {
+      b.addEventListener('change', function () { L.toggleTodo(b.getAttribute('data-toggle')); render(); });
+    });
+    document.querySelectorAll('[data-del]').forEach(function (b) {
+      b.addEventListener('click', function () { L.removeTodo(b.getAttribute('data-del')); render(); });
+    });
+    document.querySelectorAll('[data-append]').forEach(function (b) {
+      b.addEventListener('click', function () { appendToToday(b); });
+    });
+    document.querySelectorAll('[data-edit]').forEach(function (b) {
+      b.addEventListener('click', function () { startEdit(b.getAttribute('data-edit')); });
+    });
+    document.querySelectorAll('[data-copy]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var id = b.getAttribute('data-copy');
+        var t = L.todos().filter(function (x) { return x.id === id; })[0];
+        if (!t) return;
+        var line = L.todoMarkdown(t);
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(line);
+        flash('已複製：' + line);
+      });
+    });
+
+    bindEditRow();
+  }
+
+  function add() {
+    var text = elText.value.trim();
+    if (!text) { elText.focus(); return; }
+    var project = elProject.value === '__new__' ? elNewProject.value.trim() : elProject.value;
+    L.addTodo({ text: text, project: project, url: elUrl.value.trim(), status: elStatus.value });
+    elText.value = '';
+    elUrl.value = '';
+    elNewProject.value = '';
+    fillSelects();
+    if (!project || !selectProject(project)) selectProject('其他');
+    elNewProject.classList.add('hidden');
+    render();
+    elText.focus();
+    flash('加好了。');
+  }
+
+  elProject.addEventListener('change', function () {
+    var isNew = elProject.value === '__new__';
+    elNewProject.classList.toggle('hidden', !isNew);
+    if (isNew) elNewProject.focus();
+  });
+
+  document.getElementById('t-add').addEventListener('click', add);
+  /* 打完字按 Enter 就新增這個便利留著，只有「組字中的 Enter」要放過去 */
+  [elText, elUrl, elNewProject].forEach(function (input) {
+    var composing = imeGuard(input);
+    input.addEventListener('keydown', function (e) {
+      if (composing(e)) return;
+      if (e.key === 'Enter') { e.preventDefault(); add(); }
+    });
+  });
+
+  fillSelects();
+  selectProject('其他');
+  render();
+});
+</script>
+</body>
+</html>

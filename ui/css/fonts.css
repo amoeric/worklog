@@ -1,0 +1,33 @@
+/* 字體：全部放在專案裡，app 離線也能正常顯示，不連外。 */
+
+/* Cal Sans：cal.diy 的標題字 */
+@font-face {
+  font-family: 'Cal Sans';
+  src: url('../fonts/CalSans-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Inter：內文字，latin subset，中文交給系統字型 */
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/Inter-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/Inter-500.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Inter';
+  src: url('../fonts/Inter-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}

@@ -1,0 +1,11 @@
+/* 捲軸：macOS 的 overlay 捲軸在 app 視窗裡看起來像多出來的一條白線，
+   而且每一個可捲動區都會冒一條。藏起來，捲動本身不受影響。 */
+* {
+  scrollbar-width: none;          /* Firefox / 標準屬性 */
+  -ms-overflow-style: none;
+}
+::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  background: transparent;
+}

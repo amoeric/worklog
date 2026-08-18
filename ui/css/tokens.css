@@ -1,0 +1,68 @@
+/* ============================================================
+   每日工作日誌 — 間距、圓角、陰影、版面（tokens.css）
+
+   來源證據：從 index.html / daily-log.html / status-board.html /
+   month-overview.html / todo-list.html / work-item.html 的實際 class 反推，
+   加上 js/tailwind-config.js 的 spacing.13 自訂值。
+
+   必須先載入 colors_and_type.css。
+   ============================================================ */
+
+:root {
+  /* ---------- 間距：Tailwind 的 4px 階，只留實際用到的 ---------- */
+  --space-1: 0.25rem;   /* 4px  — 圖示與文字的最小縫 */
+  --space-1_5: 0.375rem;/* 6px  — 徽章上下內距 */
+  --space-2: 0.5rem;    /* 8px  — 一般元素間距、按鈕群縫 */
+  --space-2_5: 0.625rem;/* 10px — 清單列上下內距 */
+  --space-3: 0.75rem;   /* 12px — 卡片內距、列間橫向縫 */
+  --space-4: 1rem;      /* 16px — 版面左右內距（手機） */
+  --space-5: 1.25rem;   /* 20px — 卡片內距（今天的卡） */
+  --space-6: 1.5rem;    /* 24px — 版面左右內距（桌機）、區塊間距 */
+  --space-7: 1.75rem;   /* 28px — 日誌區塊之間 */
+  --space-8: 2rem;      /* 32px — 主要區塊之間 */
+  --space-10: 2.5rem;   /* 40px — 已歸檔區的分隔留白 */
+  --space-24: 6rem;     /* 96px — 手機底部導覽讓出的空間 */
+
+  /* ---------- 版面尺寸 ---------- */
+  --sidebar-w: 15rem;     /* w-60：側邊欄固定寬 */
+  --header-h: 3.25rem;    /* h-13：自訂值，品牌列與頁首同高 */
+  --content-narrow: 48rem;/* max-w-3xl：日誌、TODO、單一項目 */
+  --content-wide: 64rem;  /* max-w-5xl：狀態總覽、月曆 */
+  --popover-w: 19.5rem;   /* 日曆彈出層 */
+  --cell-h-sm: 4rem;      /* 月曆格：手機 */
+  --cell-h-md: 5rem;      /* 月曆格：平板 */
+  --cell-h-lg: 6rem;      /* 月曆格：桌機 */
+  --touch-min: 2.75rem;   /* 44px：可點區域下限 */
+
+  /* ---------- 圓角：四級，由小到大 ---------- */
+  --radius-xs: 0.25rem;  /* rounded   — 連結標籤、狀態徽章 */
+  --radius-sm: 0.375rem; /* rounded-md— 導覽藥丸、清單列 hover、月曆日 */
+  --radius-md: 0.5rem;   /* rounded-lg— 按鈕、輸入框、流程軌格子 */
+  --radius-lg: 0.75rem;  /* rounded-xl— 卡片、空狀態、彈出層 */
+  --radius-full: 9999px; /* 圓點、進度條 */
+
+  /* ---------- 陰影：只有兩個，其餘一律靠髮絲線 ---------- */
+  --shadow-pill: 0 1px 2px 0 rgb(0 0 0 / 0.05);            /* 選中的導覽藥丸 */
+  --shadow-popover: 0 20px 25px -5px rgb(0 0 0 / 0.1),
+                    0 8px 10px -6px rgb(0 0 0 / 0.1);       /* 日曆彈出層 */
+
+  /* ---------- 邊框 ---------- */
+  --border-hairline: 1px;
+  --border-strong: 2px;   /* 手機導覽的選中上緣、今天的外框 */
+
+  /* ---------- 動態 ---------- */
+  --duration-fast: 120ms;
+  --easing: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---------- 半透明頁首（backdrop-blur） ---------- */
+  --header-blur: 8px;
+  --header-alpha: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --duration-fast: 0ms; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

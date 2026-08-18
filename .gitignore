@@ -1,0 +1,7 @@
+# Rust 編譯產物（4GB 以上，不進版控）
+/src-tauri/target/
+
+# Tauri 產生的排程檔
+/src-tauri/gen/schemas/
+
+.DS_Store

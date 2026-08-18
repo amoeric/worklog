@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作項目歷程 — 每日工作日誌</title>
+<link href="css/fonts.css" rel="stylesheet">
+<link href="css/app.css" rel="stylesheet">
+<script src="vendor/tailwind.js"></script>
+<script src="js/tailwind-config.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/store.js"></script>
+<script src="js/shell.js"></script>
+</head>
+<body class="flex h-screen flex-col overflow-hidden bg-paper text-ink antialiased dark:bg-dpaper dark:text-dink font-sans text-base" data-od-id="work-item-page">
+
+<div data-shell="topbar" data-tab="board.html" data-crumb="工作項目"></div>
+
+<div class="flex min-h-0 flex-1 flex-col">
+
+    <div class="flex flex-wrap items-center gap-2 border-b border-line px-4 py-3 dark:border-dline md:px-6" data-od-id="item-toolbar">
+      <a id="to-board" href="board.html" class="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft">回看板</a>
+      <select id="siblings" class="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-1.5 shadow-sm dark:border-dline dark:bg-dsurface" aria-label="換一個工作項目"></select>
+    </div>
+
+    <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-10 pt-5 md:px-6">
+      <div id="body" class="w-full"></div>
+    </div>
+</div>
+
+<script>
+window.Log.ready(function () {
+  var L = window.Log;
+  var params = new URLSearchParams(location.search);
+  var first = L.allItems()[0];
+  var id = params.get('id') || (first ? first.id : '');
+
+  /* 從「某一天」的看板點進來，回去也要回到那一天 */
+  var fromDay = params.get('d');
+  if (fromDay && /^\d{7}$/.test(fromDay)) {
+    document.getElementById('to-board').setAttribute('href', 'board.html?d=' + fromDay);
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function chip(st) {
+    return '<span class="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 leading-tight ' + L.statusClass(st.id) + '">' +
+      '<span class="h-2 w-2 rounded-full ' + L.statusDotClass(st.id) + '"></span>' + st.label + '</span>';
+  }
+
+  function linkTag(href, label) {
+    return '<a href="' + esc(href) + '" target="_blank" rel="noopener" class="shrink-0 rounded-full bg-accentsoft px-2.5 py-0.5 leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink">' + label + '</a>';
+  }
+
+  function timeline(item) {
+    if (!item.history.length) {
+      return '<p class="rounded-xl border border-line bg-surface px-3 py-3 text-muted dark:border-dline dark:bg-dsurface dark:text-dmuted">這個項目還沒有任何日誌條目。</p>';
+    }
+    return '<ol class="ml-1 border-l border-line pl-6 dark:border-dline">' + item.history.map(function (h, i) {
+      var st = h.status ? L.statusById(h.status) : null;
+      var last = i === item.history.length - 1;
+      var kind = L.detectKind(h.url);
+      return '' +
+        '<li class="relative ' + (last ? '' : 'pb-6') + '" data-od-id="timeline-' + h.code + '">' +
+          '<span class="absolute -left-6 top-2 h-2.5 w-2.5 -translate-x-1/2 rounded-full ring-4 ring-paper dark:ring-dpaper ' +
+            (st ? L.statusDotClass(st.id) : 'bg-line dark:bg-dline') + '"></span>' +
+          '<div class="flex flex-wrap items-center gap-x-3 gap-y-1">' +
+            '<a href="daily-log.html?d=' + h.code + '" class="shrink-0 font-mono tabular-nums underline-offset-4 hover:underline">' + h.code + '</a>' +
+            '<span class="shrink-0 text-muted dark:text-dmuted">' + L.shortLabel(h.code) + '</span>' +
+            (st ? chip(st) : '') +
+            (h.pending ? '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass('parked') + '">未寫回</span>' : '') +
+          '</div>' +
+          '<div class="mt-1.5 flex items-center gap-3 rounded-xl border border-line bg-surface px-3 py-2.5 dark:border-dline dark:bg-dsurface">' +
+            '<span class="min-w-0 flex-1 truncate" title="' + esc(h.title) + '">' + esc(h.title) + '</span>' +
+            (kind ? linkTag(h.url, L.linkLabel(h.url)) : '') +
+          '</div>' +
+        '</li>';
+    }).join('') + '</ol>';
+  }
+
+  function render() {
+    var item = L.itemById(id);
+    var box = document.getElementById('body');
+
+    if (!item) {
+      box.innerHTML = '<p class="rounded-xl border border-line bg-surface px-4 py-6 text-muted dark:border-dline dark:bg-dsurface dark:text-dmuted">找不到這個工作項目。</p>';
+      return;
+    }
+
+    var st = L.statusById(item.status);
+    var stay = (item.status === 'todo' || item.status === 'parked')
+      ? '<span class="rounded-full bg-accentsoft px-2.5 py-0.5 leading-tight text-muted dark:bg-daccentsoft dark:text-dmuted">' + L.stayLabel(item.since) + '</span>'
+      : '';
+
+    box.innerHTML = '' +
+      '<div class="flex flex-wrap items-center gap-2 pb-2">' +
+        chip(st) +
+        '<span class="font-mono text-muted dark:text-dmuted">' + esc(item.project) + '</span>' +
+        (item.tasks ? '<span class="tabular-nums text-muted dark:text-dmuted">' + item.tasks.done + '/' + item.tasks.total + ' 項任務</span>' : '') +
+        stay +
+      '</div>' +
+
+      '<h1 class="font-display mt-1 text-3xl font-bold leading-snug tracking-tightest" data-od-id="item-title">' + esc(item.title) + '</h1>' +
+
+      '<div class="mt-3 flex flex-wrap items-center gap-2" data-od-id="item-links">' +
+        (item.issue ? linkTag(item.issue, L.linkLabel(item.issue)) : '') +
+        (item.mr ? linkTag(item.mr, L.linkLabel(item.mr)) : '') +
+        (!item.issue && !item.mr ? '<span class="text-muted dark:text-dmuted">還沒有議題或 MR 連結</span>' : '') +
+      '</div>' +
+
+      '<div class="mt-5 rounded-xl border border-line p-3 text-muted dark:border-dline dark:text-dmuted ' + L.groupClass('todo') + '" data-od-id="readonly-note">' +
+        '<p>目前狀態是從日誌檔算出來的：最後一筆帶狀態的條目寫什麼，這裡就是什麼。</p>' +
+        '<p class="mt-1">要推進，去<a href="board.html" class="underline underline-offset-4">看板</a>把卡片拖到別欄；那筆變更會先留在 app 裡，等你複製給 Claude 寫進 <span class="font-mono">' + L.fileName(L.today()) + '</span>。</p>' +
+      '</div>' +
+
+      '<h2 class="mb-3 mt-8 border-b border-line pb-2 font-display text-xl font-bold tracking-tight dark:border-dline" data-od-id="timeline-heading">歷程</h2>' +
+      timeline(item);
+
+    document.getElementById('siblings').innerHTML = L.allItems().map(function (o) {
+      return '<option value="' + o.id + '"' + (o.id === item.id ? ' selected' : '') + '>' +
+        L.statusById(o.status).label + '　' + esc(o.title) + '</option>';
+    }).join('');
+  }
+
+  document.getElementById('siblings').addEventListener('change', function () {
+    location.href = 'work-item.html?id=' + this.value + (fromDay ? '&d=' + fromDay : '');
+  });
+
+  render();
+});
+</script>
+</body>
+</html>
