@@ -37,6 +37,9 @@
   <!-- 圖例：七種狀態＝七種行事曆 -->
   <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 px-4 pb-3 md:px-6" id="legend" data-od-id="calendar-legend"></div>
 
+  <!-- 開著過濾的時候要看得出來 -->
+  <div id="filter-bar" class="hidden shrink-0 px-4 pb-3 md:px-6" data-od-id="filter-bar"></div>
+
   <!-- 星期列：靠右對齊，跟格子裡的日期同一條直線 -->
   <div class="grid shrink-0 grid-cols-7 border-b border-line px-0 pb-1.5 dark:border-dline" data-od-id="weekday-row"></div>
 
@@ -55,36 +58,84 @@ window.Log.ready(function () {
   var view = { roc: t.roc, month: t.month };
 
   var grid = document.getElementById('grid');
+  var gridClass = grid.className;          /* 引導卡模式會把格線整片拿掉，回來時原樣裝回去 */
+  var weekdayRow = document.querySelector('[data-od-id="weekday-row"]');
+  var legend = document.getElementById('legend');
 
-  document.querySelector('[data-od-id="weekday-row"]').innerHTML =
+  /* 搜尋：關鍵字由工具列的搜尋框管。
+     月曆的格線結構要保持完整，所以沒命中的日子不會消失，只是整格淡掉、統計歸零。 */
+  var query = (window.Shell && window.Shell.searchQuery) ? window.Shell.searchQuery() : '';
+
+  function filtering() {
+    return L.searchTerms(query).length > 0;
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* 這一天命中關鍵字的條目；沒有關鍵字就是全部 */
+  function keptEntries(code) {
+    return L.entriesOf(code).filter(function (e) {
+      return L.matchesSearch(L.entrySearchFields(e), query);
+    });
+  }
+
+  /* 格子裡的狀態統計只算命中的條目，沒標狀態的算成 none */
+  function keptCounts(code) {
+    var counts = {};
+    keptEntries(code).forEach(function (e) {
+      var key = e.status || 'none';
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }
+
+  weekdayRow.innerHTML =
     L.WEEKDAYS.map(function (w, i) {
       return '<span class="truncate px-2 pt-2 text-right ' +
         (i === 0 || i === 6 ? 'text-muted dark:text-dmuted' : 'text-muted dark:text-dmuted') + '">' + w + '</span>';
     }).join('');
 
-  document.getElementById('legend').innerHTML =
+  /* 圖例的標籤一律中文（日誌檔裡寫的就是中文，兩邊對得起來） */
+  legend.innerHTML =
     '<span class="shrink-0 text-muted dark:text-dmuted">狀態</span>' +
     L.statuses().map(function (s) {
     return '<span class="flex shrink-0 items-center gap-1.5 text-muted dark:text-dmuted">' +
-      '<span class="h-2.5 w-2.5 rounded-full ' + L.statusDotClass(s.id) + '"></span>' + s.label + '</span>';
+      '<span class="h-2.5 w-2.5 rounded-full ' + L.statusDotClass(s.id) + '"></span>' + L.statusText(s.id) + '</span>';
   }).join('') +
   '<span class="flex shrink-0 items-center gap-1.5 text-muted dark:text-dmuted">' +
     '<span class="h-2.5 w-2.5 rounded-full bg-muted dark:bg-dmuted"></span>沒標狀態</span>';
 
-  function dot(id) {
-    return '<span class="h-2 w-2 shrink-0 rounded-full ' +
-      (id ? L.statusDotClass(id) : 'bg-muted dark:bg-dmuted') + '"></span>';
+  /* 一天的密度條：一條軌道，裡面依狀態順序排出各段，
+     每段的寬度就是該狀態佔當天總筆數的百分比，顏色用該狀態的圓點色。 */
+  function densityBar(order, counts, total) {
+    var segs = order.filter(function (k) { return counts[k]; }).map(function (k) {
+      var color = k === 'none' ? 'bg-muted dark:bg-dmuted' : L.statusDotClass(k);
+      var pct = Math.round(counts[k] / total * 10000) / 100;
+      return '<span class="h-full ' + color + '" style="width:' + pct + '%"></span>';
+    }).join('');
+    return '<span class="flex h-1.5 w-full overflow-hidden rounded-full bg-accentsoft dark:bg-daccentsoft">' +
+      segs + '</span>';
+  }
+
+  /* 明細列：沿用行事曆事件那一列，標籤用中文 */
+  function detailRows(rows, counts) {
+    return rows.map(function (k) {
+      var st = k === 'none' ? null : L.statusById(k);
+      return L.eventRow(st ? st.id : null, st ? L.statusText(st.id) : '沒標狀態', counts[k]);
+    }).join('');
   }
 
   function cell(date, inMonth) {
     var code = L.toCode(date);
     var d = date.getDate();
-    var n = L.countOf(code);
-    var counts = L.dayStatusCounts(code);
+    var n = keptEntries(code).length;
+    var counts = keptCounts(code);
     var order = L.statuses().map(function (s) { return s.id; }).concat(['none']);
     var rows = order.filter(function (k) { return counts[k]; });
-    var shown = rows.slice(0, 3);
-    var rest = rows.length - shown.length;
     var isToday = code === todayCode;
 
     var num = isToday
@@ -94,31 +145,130 @@ window.Log.ready(function () {
 
     return '' +
       '<button data-goto="' + code + '" data-od-id="day-' + code + '" ' +
-        'class="flex min-w-0 flex-col gap-0.5 overflow-hidden border-b border-r border-line px-1.5 pb-1.5 pt-1 text-left hover:bg-accentsoft/70 dark:border-dline dark:hover:bg-daccentsoft/70 ' +
-        (inMonth ? 'bg-surface dark:bg-dsurface' : 'bg-paper dark:bg-dpaper') + '">' +
+        'class="group flex min-w-0 flex-col gap-0.5 overflow-hidden border-b border-r border-line px-1.5 pb-1.5 pt-1 text-left hover:bg-accentsoft/70 dark:border-dline dark:hover:bg-daccentsoft/70 ' +
+        (inMonth ? 'bg-surface dark:bg-dsurface' : 'bg-paper dark:bg-dpaper') +
+        (filtering() && n === 0 ? ' opacity-40' : '') + '">' +
         '<span class="flex shrink-0 items-center gap-1">' +
           '<span class="hidden min-w-0 truncate font-mono text-muted dark:text-dmuted lg:inline">' + code + '</span>' +
           '<span class="ml-auto flex h-7 items-center">' + num + '</span>' +
         '</span>' +
-        // 平板以上：像行事曆的事件列
-        '<span class="hidden min-h-0 flex-col gap-0.5 sm:flex">' +
-          shown.map(function (k) {
-            var st = k === 'none' ? null : L.statusById(k);
-            return L.eventRow(st ? st.id : null, st ? st.label : '沒標狀態', counts[k]);
-          }).join('') +
-          (rest > 0 ? '<span class="px-1.5 text-muted dark:text-dmuted">還有 ' + rest + ' 種</span>' : '') +
-        '</span>' +
-        // 手機：欄位太窄，只留圓點與件數
+        // 沒有紀錄的日子不畫密度條，也不留空位
         (n > 0
-          ? '<span class="mt-auto flex flex-wrap items-center gap-1 sm:hidden">' +
-              rows.slice(0, 4).map(function (k) { return dot(k === 'none' ? null : k); }).join('') +
-              '<span class="tabular-nums text-muted dark:text-dmuted">' + n + '</span>' +
+          ? // 滑鼠移上去才展開明細：純 CSS 的 group-hover，一顯一隱，不寫 JS 事件
+            '<span class="hidden min-h-0 flex-1 flex-col gap-0.5 overflow-hidden group-hover:flex">' +
+              detailRows(rows, counts) +
+            '</span>' +
+            // 平常只有密度條與一行總數
+            '<span class="mt-auto flex shrink-0 flex-col gap-1 pt-1 group-hover:hidden">' +
+              densityBar(order, counts, n) +
+              '<span class="tabular-nums ' +
+                (isToday ? 'font-medium text-ink dark:text-dink' : 'text-muted dark:text-dmuted') +
+                '">' + n + ' 筆</span>' +
             '</span>'
           : '') +
       '</button>';
   }
 
+  /* ---------- 沒有日誌可讀的時候 ----------
+     判斷跟工具列那條黃色橫幅一致：沒設資料夾／資料夾不存在／一個日誌檔都沒有。
+     這種時候整片空格線沒有意義，格線不畫，改成一張告訴你下一步怎麼走的引導卡。 */
+  function noLogs() {
+    var ws = L.workspace();
+    return !ws.folder || !ws.folder_exists || !(ws.days && ws.days.length);
+  }
+
+  var GUIDE_STEPS = [
+    {
+      title: '指定日誌資料夾',
+      desc: '預設路徑是 <span class="font-mono">~/Documents/Obsidian Vault/每日工作日誌</span>，換成別的也可以。',
+      btn: '選資料夾',
+      href: 'settings.html',
+      primary: true,
+    },
+    {
+      title: '讓 Claude 知道怎麼寫',
+      desc: '把書寫規則裝進 <span class="font-mono">~/.claude/CLAUDE.md</span>，之後每完成一件事就會自動記一行。',
+      btn: '檢查規則',
+      href: 'settings.html',
+    },
+    {
+      title: '或自己先寫一筆',
+      desc: '到 TODO 頁記一件事，按「加到今日日誌」就會建出今天的檔案。',
+      btn: '去 TODO',
+      href: 'todo-list.html',
+    },
+  ];
+
+  /* 群組內嵌清單：白面板 + 圓角 12px + 列與列之間一條髮絲線 */
+  function guideCard() {
+    var steps = GUIDE_STEPS.map(function (s, i) {
+      var btn = s.primary
+        ? 'bg-accent font-medium text-white shadow-sm hover:opacity-90 dark:bg-daccent'
+        : 'border border-line bg-surface shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-dpaper';
+      return '<div class="flex items-center gap-3 border-t border-line px-4 py-3 first:border-t-0 dark:border-dline">' +
+        '<span class="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-accentsoft tabular-nums text-muted dark:bg-daccentsoft dark:text-dmuted">' + (i + 1) + '</span>' +
+        '<span class="min-w-0 flex-1">' +
+          '<span class="block font-medium">' + s.title + '</span>' +
+          '<span class="block text-muted dark:text-dmuted">' + s.desc + '</span>' +
+        '</span>' +
+        '<a href="' + s.href + '" class="shrink-0 rounded-full px-3 py-1 leading-tight ' + btn + '">' + s.btn + '</a>' +
+      '</div>';
+    }).join('');
+
+    return '<div class="mx-auto w-full max-w-2xl px-4 py-8 md:px-6">' +
+      '<h2 class="font-display text-2xl font-bold tracking-tightest">還沒有日誌可以讀</h2>' +
+      '<p class="mt-2 text-muted dark:text-dmuted">這個 app 只負責讀，日誌檔是 Claude Code 幫你寫的，' +
+        '一天一個 <span class="font-mono">1150818.md</span>。</p>' +
+      '<div class="mt-5 overflow-hidden rounded-xl border border-line bg-surface shadow-sm dark:border-dline dark:bg-dsurface">' +
+        steps +
+      '</div>' +
+      '<p class="mt-5 text-muted dark:text-dmuted">寫出來的日誌長這樣：</p>' +
+      '<pre class="mt-2 overflow-x-auto rounded-xl bg-paper px-4 py-3 font-mono leading-relaxed dark:bg-daccentsoft">' +
+        '## project_a\n' +
+        '- `待合併` [feat: 對話頁補上左側清單](http://gitlab.example.com/group/project_a/-/merge_requests/128)' +
+      '</pre>' +
+    '</div>';
+  }
+
+  /* 開著過濾很容易忘記，所以直接寫出關鍵字與命中幾筆 */
+  function renderFilter(total) {
+    var bar = document.getElementById('filter-bar');
+    if (!filtering()) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+    bar.classList.remove('hidden');
+    bar.innerHTML = '' +
+      '<div class="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-accentsoft px-3 py-2 dark:border-dline dark:bg-daccentsoft">' +
+        '<span class="min-w-0 flex-1 truncate">正在用「' + esc(query) + '」過濾，這個月共 ' + total + ' 筆</span>' +
+        '<button id="clear-filter" class="shrink-0 rounded-full border border-line bg-surface px-3 py-1 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-dpaper">清除</button>' +
+      '</div>';
+    document.getElementById('clear-filter').addEventListener('click', function () {
+      if (window.Shell && window.Shell.setSearchQuery) window.Shell.setSearchQuery('');
+    });
+  }
+
+  /* 引導卡出現的時候，星期列與圖例都是月曆格線的一部分，一起收起來 */
+  function showCalendarChrome(on) {
+    weekdayRow.style.display = on ? '' : 'none';
+    legend.style.display = on ? '' : 'none';
+  }
+
+  function renderGuide() {
+    var year = view.roc + 1911;
+    grid.className = '';           /* 格線整片不畫 */
+    grid.innerHTML = guideCard();
+    showCalendarChrome(false);
+    document.getElementById('filter-bar').classList.add('hidden');
+    document.getElementById('month-title').textContent = year + '年' + view.month + '月';
+    document.getElementById('month-sub').textContent = '民國' + view.roc + '年';
+    document.getElementById('month-count').textContent = '';
+    var crumb = document.querySelector('[data-od-id="crumb"]');
+    if (crumb) crumb.textContent = year + '年' + view.month + '月';
+  }
+
   function render() {
+    if (noLogs()) { renderGuide(); return; }
+    showCalendarChrome(true);
+    grid.className = gridClass;
+
     var year = view.roc + 1911;
     var first = new Date(year, view.month - 1, 1);
     var start = new Date(year, view.month - 1, 1 - first.getDay());
@@ -130,7 +280,7 @@ window.Log.ready(function () {
       var date = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
       var inMonth = date.getMonth() === view.month - 1 && date.getFullYear() === year;
       if (inMonth) {
-        var n = L.countOf(L.toCode(date));
+        var n = keptEntries(L.toCode(date)).length;
         total += n;
         if (n > 0) recorded += 1;
       }
@@ -140,7 +290,9 @@ window.Log.ready(function () {
     grid.innerHTML = cells;
     grid.querySelectorAll('[data-goto]').forEach(function (b) {
       b.addEventListener('click', function () {
-        location.href = 'daily-log.html?d=' + b.getAttribute('data-goto') + '&range=day';
+        var url = 'daily-log.html?d=' + b.getAttribute('data-goto') + '&range=day';
+        if (window.Shell && window.Shell.withSearch) url = window.Shell.withSearch(url);
+        location.href = url;
       });
     });
 
@@ -148,7 +300,8 @@ window.Log.ready(function () {
     document.getElementById('month-sub').textContent = '民國' + view.roc + '年';
     document.getElementById('month-count').textContent = total > 0
       ? recorded + ' 天有紀錄 · 共 ' + total + ' 筆'
-      : '這個月沒有紀錄';
+      : filtering() ? '這個月沒有符合的條目' : '這個月沒有紀錄';
+    renderFilter(total);
 
     var crumb = document.querySelector('[data-od-id="crumb"]');
     if (crumb) crumb.textContent = year + '年' + view.month + '月';
@@ -173,6 +326,12 @@ window.Log.ready(function () {
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
     if (e.key === 'ArrowLeft') shiftMonth(-1);
     if (e.key === 'ArrowRight') shiftMonth(1);
+  });
+
+  /* 工具列的搜尋框改了關鍵字就重畫，資料不用重讀 */
+  document.addEventListener('worklog:search', function (e) {
+    query = e.detail || '';
+    render();
   });
 
   render();

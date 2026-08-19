@@ -635,6 +635,10 @@ fn image_mime(content_type: &str) -> Result<String, String> {
         Ok(t)
     } else if t.is_empty() {
         Err("回來的東西沒說是什麼型別，不敢當成圖片。".into())
+    } else if t.starts_with("text/html") {
+        // GitLab 的 /uploads/ 只認瀏覽器 session，personal access token 一律被導去登入頁。
+        // 這是 GitLab 本身的限制，不是設定錯——直接講清楚，不要讓人以為是 token 填錯。
+        Err("這個服務不讓 API token 讀附圖（回來的是登入頁）。點圖片會用瀏覽器開，瀏覽器有登入就看得到。".into())
     } else {
         Err(format!(
             "拿回來的不是支援的圖片型別（{}）。可能被導去登入頁，也可能 token 看不到這個附件。",

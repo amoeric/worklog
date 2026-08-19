@@ -11,6 +11,19 @@
 <script src="js/theme.js"></script>
 <script src="js/store.js"></script>
 <script src="js/shell.js"></script>
+<style>
+  /* 看板欄寬：有卡片的欄平分剩下的空間，空欄收成一條窄軌。
+     拖曳經過窄軌時會加上 .is-open 暫時展開，放開後（還是 0 的話）自己收回去。 */
+  [data-col] { transition: flex-basis .18s ease, min-width .18s ease; }
+  [data-col="wide"] { flex: 1 1 0%; min-width: 15rem; max-width: 26.25rem; }
+  [data-col="rail"] { flex: 0 0 2.75rem; min-width: 2.75rem; }
+  [data-col="rail"].is-open { flex: 0 0 15rem; min-width: 15rem; }
+  [data-col="rail"] [data-full] { display: none; }
+  [data-col="rail"].is-open [data-rail] { display: none; }
+  [data-col="rail"].is-open [data-full] { display: flex; }
+  /* 窄軌上的狀態名直著寫 */
+  .rail-name { writing-mode: vertical-rl; }
+</style>
 </head>
 <body class="flex h-screen flex-col overflow-hidden bg-paper text-ink antialiased dark:bg-dpaper dark:text-dink font-sans text-base" data-od-id="board-page">
 
@@ -38,11 +51,14 @@
     </div>
   </div>
 
+  <!-- 開著過濾的時候要看得出來 -->
+  <div id="filter-bar" class="hidden px-4 pb-3 md:px-6" data-od-id="filter-bar"></div>
+
   <div id="pending-bar" class="hidden px-4 pb-3 md:px-6" data-od-id="pending-bar"></div>
 
   <div class="relative min-h-0 flex-1">
     <div id="board-scroll" class="h-full overflow-x-auto overflow-y-hidden px-4 pb-4 md:px-6">
-      <div id="columns" class="flex h-full min-w-max gap-3" data-od-id="board-columns"></div>
+      <div id="columns" class="flex h-full min-w-full gap-3" data-od-id="board-columns"></div>
     </div>
     <div data-edge="left" class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-paper to-transparent opacity-0 transition-opacity dark:from-dpaper"></div>
     <div data-edge="right" class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-paper to-transparent opacity-0 transition-opacity dark:from-dpaper"></div>
@@ -56,6 +72,14 @@ window.Log.ready(function () {
   var day = params.get('d');
   if (day && !/^\d{7}$/.test(day)) day = null;
   var scope = day ? 'day' : 'all';
+
+  /* 搜尋：關鍵字由工具列的搜尋框管，看板只負責過濾卡片。
+     六欄一律留著，只是卡片變少、數字跟著變。 */
+  var query = (window.Shell && window.Shell.searchQuery) ? window.Shell.searchQuery() : '';
+
+  function filtering() {
+    return L.searchTerms(query).length > 0;
+  }
 
   var CARD = 'rounded-lg border border-line bg-surface p-2.5 shadow-sm dark:border-dline dark:bg-dsurface';
 
@@ -75,60 +99,130 @@ window.Log.ready(function () {
     var all = L.allItems();
     if (scope === 'day' && day) {
       var ids = touchedOn(day);
-      return all.filter(function (it) { return ids[it.id]; });
+      all = all.filter(function (it) { return ids[it.id]; });
     }
-    return all;
+    return all.filter(function (it) { return L.matchesSearch(L.itemSearchFields(it), query); });
   }
 
-  function linkTag(href, label) {
-    return '<a href="' + esc(href) + '" target="_blank" rel="noopener" ' +
-      'class="shrink-0 rounded-full bg-accentsoft px-2 py-0.5 leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink">' + label + '</a>';
+  /* 卡片本來就窄，連結標籤只放短的（MR／議題）＋一個小圖示，
+     完整名稱（GitLab MR、Redmine 議題…）放 title，滑上去才看得到。 */
+  function linkIcon(kind) {
+    var open = '<svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">';
+    if (kind === 'mr') {
+      return open + '<circle cx="6.5" cy="6" r="2.5"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="12" r="2.5"/>' +
+        '<path d="M6.5 8.5v7"/><path d="M9 6h2.5a3.5 3.5 0 0 1 3.5 3.5V10"/></svg>';
+    }
+    if (kind === 'issue') {
+      return open + '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V13"/><path d="M12 16.2h.01"/></svg>';
+    }
+    return open + '<path d="M10.6 13.4a4 4 0 0 0 5.7 0l2-2a4 4 0 0 0-5.7-5.7l-1.1 1.1"/>' +
+      '<path d="M13.4 10.6a4 4 0 0 0-5.7 0l-2 2a4 4 0 0 0 5.7 5.7l1.1-1.1"/></svg>';
   }
 
-  function card(item) {
-    var moveOpts = L.lifecycle().map(function (s) {
-      return '<option value="' + s.id + '"' + (s.id === item.status ? ' selected' : '') + '>' + s.label + '</option>';
+  function linkTag(href) {
+    var kind = L.detectKind(href);
+    return '<a href="' + esc(href) + '" target="_blank" rel="noopener" title="' + esc(L.linkLabel(href)) + '" ' +
+      'class="inline-flex shrink-0 items-center gap-1 rounded-full bg-accentsoft px-2 py-0.5 leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink">' +
+      linkIcon(kind) + esc(L.kindLabel(kind)) + '</a>';
+  }
+
+  /* 移動到…：卡片右上角那顆按鈕點開的中文狀態清單。
+     跟拖曳做同一件事，但觸控沒有拖曳，這條路一定要留著。 */
+  function moveMenu(item) {
+    var opts = L.lifecycle().map(function (s) {
+      var on = s.id === item.status;
+      return '<button type="button" data-move-to="' + s.id + '" ' +
+        'class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left leading-tight ' +
+        (on ? 'font-semibold text-ink dark:text-dink'
+            : 'text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink') + '">' +
+        '<span class="h-2 w-2 shrink-0 rounded-full ' + L.statusDotClass(s.id) + '"></span>' +
+        '<span class="min-w-0 flex-1 truncate">' + esc(L.statusText(s.id)) + '</span>' +
+      '</button>';
     }).join('');
 
+    return '' +
+      '<div data-menu class="absolute right-1 top-8 z-20 hidden w-32 rounded-lg border border-line bg-surface p-1 shadow-pop dark:border-dline dark:bg-dsurface">' +
+        opts +
+      '</div>';
+  }
+
+  /* 那顆按鈕只在滑鼠移到卡片上才出現；sm 以下沒有 hover，所以一直顯示 */
+  function moveButton() {
+    return '' +
+      '<button type="button" data-menu-btn aria-label="移動到別的狀態" aria-haspopup="true" aria-expanded="false" ' +
+      'class="absolute right-1 top-1 grid h-6 w-6 place-items-center rounded-md text-muted opacity-100 hover:bg-accentsoft hover:text-ink sm:opacity-0 sm:group-hover:opacity-100 dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink">' +
+        '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M4 12h11"/><path d="M12 7l5 5-5 5"/><path d="M20 5v14"/>' +
+        '</svg>' +
+      '</button>';
+  }
+
+  /* dim：已歸檔那欄整欄退到背景，標題文字也跟著變灰 */
+  function card(item, dim) {
     var stay = (item.status === 'todo' || item.status === 'parked')
       ? '<span class="shrink-0">' + L.stayLabel(item.since) + '</span>' : '';
 
+    var links = (item.issue ? linkTag(item.issue) : '') + (item.mr ? linkTag(item.mr) : '');
+
     return '' +
       '<div draggable="true" data-card="' + item.id + '" data-od-id="card-' + item.id + '" ' +
-      'class="cursor-grab ' + CARD + ' hover:border-muted active:cursor-grabbing dark:hover:border-dmuted">' +
-        '<a href="work-item.html?id=' + item.id + (scope === 'day' && day ? '&d=' + day : '') + '" class="block leading-snug underline-offset-4 hover:underline">' + esc(item.title) + '</a>' +
+      'class="group relative cursor-grab ' + CARD + ' hover:border-muted active:cursor-grabbing dark:hover:border-dmuted">' +
+        '<a href="work-item.html?id=' + item.id + (scope === 'day' && day ? '&d=' + day : '') + '" ' +
+        'class="block pr-7 leading-snug underline-offset-4 hover:underline' + (dim ? ' text-muted dark:text-dmuted' : '') + '">' + esc(item.title) + '</a>' +
+        moveButton() +
+        moveMenu(item) +
         '<div class="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted dark:text-dmuted">' +
           '<span class="shrink-0 font-mono">' + esc(item.project) + '</span>' +
           (item.tasks ? '<span class="shrink-0 tabular-nums">' + item.tasks.done + '/' + item.tasks.total + '</span>' : '') +
           stay +
         '</div>' +
-        '<div class="mt-2 flex flex-wrap items-center gap-2">' +
-          (item.issue ? linkTag(item.issue, L.linkLabel(item.issue)) : '') +
-          (item.mr ? linkTag(item.mr, L.linkLabel(item.mr)) : '') +
-          '<select data-move="' + item.id + '" aria-label="移到別的狀態" ' +
-            'class="ml-auto shrink-0 rounded-md border border-line bg-surface px-1.5 py-0.5 text-muted dark:border-dline dark:bg-dpaper dark:text-dmuted">' +
-            moveOpts +
-          '</select>' +
-        '</div>' +
+        (links ? '<div class="mt-2 flex flex-wrap items-center gap-2">' + links + '</div>' : '') +
       '</div>';
   }
 
+  /* 欄頭只講一次事情：圓點 + 中文狀態名 + 數字，不再放英文藥丸 */
+  function columnHead(st, n) {
+    var dim = st.id === 'archived' ? ' text-muted dark:text-dmuted' : '';
+    return '' +
+      '<div class="flex shrink-0 items-center gap-2 px-1 pb-2">' +
+        '<span class="h-2 w-2 shrink-0 rounded-full ' + L.statusDotClass(st.id) + '"></span>' +
+        '<span class="min-w-0 flex-1 truncate font-medium' + dim + '">' + esc(L.statusText(st.id)) + '</span>' +
+        '<span class="shrink-0 tabular-nums text-muted dark:text-dmuted">' + n + '</span>' +
+      '</div>';
+  }
+
+  function columnBody(st, items) {
+    var dim = st.id === 'archived';
+    return '' +
+      columnHead(st, items.length) +
+      '<div data-list class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-md">' +
+        items.map(function (it) { return card(it, dim); }).join('') +
+        '<a href="todo-list.html" class="shrink-0 rounded-lg border border-dashed border-line px-2.5 py-2 text-muted hover:bg-surface hover:text-ink dark:border-dline dark:text-dmuted dark:hover:bg-dsurface dark:hover:text-dink">＋ 記到 TODO</a>' +
+      '</div>';
+  }
+
+  var COL = 'flex h-full flex-col rounded-xl border border-line p-2 dark:border-dline ';
+
   function column(st, items) {
-    var body = items.map(card).join('');
+    /* 0 件的欄收成窄軌：只留圓點、0 與直排的狀態名，寬度讓給真正在看的欄。
+       完整內容還是畫在 data-full 裡，拖曳經過時展開就有得放。 */
+    if (!items.length) {
+      return '' +
+        '<section data-drop="' + st.id + '" data-col="rail" data-od-id="column-' + st.id + '" ' +
+        'class="' + COL + 'overflow-hidden ' + L.groupClass(st.id) + '">' +
+          '<div data-rail class="flex min-h-0 flex-1 flex-col items-center gap-2 pt-1">' +
+            '<span class="h-2 w-2 shrink-0 rounded-full ' + L.statusDotClass(st.id) + '"></span>' +
+            '<span class="shrink-0 tabular-nums text-muted dark:text-dmuted">0</span>' +
+            '<span class="rail-name min-h-0 flex-1 overflow-hidden text-muted dark:text-dmuted">' + esc(L.statusText(st.id)) + '</span>' +
+          '</div>' +
+          '<div data-full class="min-h-0 flex-1 flex-col">' + columnBody(st, items) + '</div>' +
+        '</section>';
+    }
 
     return '' +
-      '<section data-drop="' + st.id + '" data-od-id="column-' + st.id + '" ' +
-      'class="flex h-full w-72 shrink-0 flex-col rounded-xl border border-line p-2 dark:border-dline ' + L.groupClass(st.id) + '">' +
-        '<div class="flex items-center gap-2 px-1 pb-2">' +
-          '<span class="flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 font-medium leading-tight ' + L.statusClass(st.id) + '">' +
-            '<span class="h-2 w-2 rounded-full ' + L.statusDotClass(st.id) + '"></span>' + st.label + '</span>' +
-          '<span class="shrink-0 tabular-nums text-muted dark:text-dmuted">' + items.length + '</span>' +
-          '<span class="ml-auto min-w-0 truncate text-muted dark:text-dmuted">' + st.zh + '</span>' +
-        '</div>' +
-        '<div data-list class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto rounded-md">' +
-          body +
-          '<a href="todo-list.html" class="shrink-0 rounded-lg border border-dashed border-line px-2.5 py-2 text-muted hover:bg-surface hover:text-ink dark:border-dline dark:text-dmuted dark:hover:bg-dsurface dark:hover:text-dink">＋ 記到 TODO</a>' +
-        '</div>' +
+      '<section data-drop="' + st.id + '" data-col="wide" data-od-id="column-' + st.id + '" ' +
+      'class="' + COL + L.groupClass(st.id) + '">' +
+        columnBody(st, items) +
       '</section>';
   }
 
@@ -169,11 +263,28 @@ window.Log.ready(function () {
     if (scope === 'day' && day) {
       note = visibleItems().length
         ? '只看 ' + L.fileName(day) + ' 有推進的項目'
-        : L.fileName(day) + ' 這天沒有推進任何工作項目';
+        : filtering()
+          ? L.fileName(day) + ' 這天沒有符合關鍵字的項目'
+          : L.fileName(day) + ' 這天沒有推進任何工作項目';
     } else {
       note = '把卡片拖到別欄就改狀態';
     }
     document.getElementById('scope-note').textContent = note;
+  }
+
+  /* 開著過濾很容易忘記，所以直接寫出關鍵字與命中幾件 */
+  function renderFilter(total) {
+    var bar = document.getElementById('filter-bar');
+    if (!filtering()) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
+    bar.classList.remove('hidden');
+    bar.innerHTML = '' +
+      '<div class="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-accentsoft px-3 py-2 dark:border-dline dark:bg-daccentsoft">' +
+        '<span class="min-w-0 flex-1 truncate">正在用「' + esc(query) + '」過濾，共 ' + total + ' 筆</span>' +
+        '<button id="clear-filter" class="shrink-0 rounded-full border border-line bg-surface px-3 py-1 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-dpaper">清除</button>' +
+      '</div>';
+    document.getElementById('clear-filter').addEventListener('click', function () {
+      if (window.Shell && window.Shell.setSearchQuery) window.Shell.setSearchQuery('');
+    });
   }
 
   function renderPending() {
@@ -204,16 +315,35 @@ window.Log.ready(function () {
     });
   }
 
+  /* 卡片上的移動選單一次只開一個，點別的地方就收起來 */
+  function closeMenus(except) {
+    document.querySelectorAll('[data-menu]').forEach(function (m) {
+      if (m === except) return;
+      m.classList.add('hidden');
+      var b = m.parentElement && m.parentElement.querySelector('[data-menu-btn]');
+      if (b) { b.setAttribute('aria-expanded', 'false'); b.style.opacity = ''; }
+    });
+  }
+
+  document.addEventListener('click', function () { closeMenus(null); });
+
+  var RING = ['ring-2', 'ring-inset', 'ring-accent', 'rounded-lg', 'dark:ring-daccent'];
+
   function wire() {
     var cols = document.getElementById('columns');
 
     cols.querySelectorAll('[data-card]').forEach(function (el) {
       el.addEventListener('dragstart', function (e) {
+        closeMenus(null);
         e.dataTransfer.setData('text/plain', el.getAttribute('data-card'));
         e.dataTransfer.effectAllowed = 'move';
         el.classList.add('opacity-50');
       });
-      el.addEventListener('dragend', function () { el.classList.remove('opacity-50'); });
+      el.addEventListener('dragend', function () {
+        el.classList.remove('opacity-50');
+        /* 拖到一半放棄的話，剛剛撐開的窄軌要收回去 */
+        cols.querySelectorAll('[data-col="rail"]').forEach(function (c) { c.classList.remove('is-open'); });
+      });
     });
 
     cols.querySelectorAll('[data-drop]').forEach(function (col) {
@@ -221,25 +351,57 @@ window.Log.ready(function () {
       col.addEventListener('dragover', function (e) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        list.classList.add('ring-2', 'ring-inset', 'ring-accent', 'rounded-lg', 'dark:ring-daccent');
+        /* 窄軌先展開成正常寬度，不然沒地方放 */
+        col.classList.add('is-open');
+        list.classList.add.apply(list.classList, RING);
       });
-      col.addEventListener('dragleave', function () {
-        list.classList.remove('ring-2', 'ring-inset', 'ring-accent', 'rounded-lg', 'dark:ring-daccent');
+      col.addEventListener('dragleave', function (e) {
+        /* 只是滑過欄裡面的子元素，不算離開 */
+        if (e.relatedTarget && col.contains(e.relatedTarget)) return;
+        col.classList.remove('is-open');
+        list.classList.remove.apply(list.classList, RING);
       });
       col.addEventListener('drop', function (e) {
         e.preventDefault();
-        list.classList.remove('ring-2', 'ring-inset', 'ring-accent', 'rounded-lg', 'dark:ring-daccent');
+        col.classList.remove('is-open');
+        list.classList.remove.apply(list.classList, RING);
         var id = e.dataTransfer.getData('text/plain');
         if (id) L.moveItem(id, col.getAttribute('data-drop')).then(render);
       });
     });
 
-    // 手機沒有拖曳，用卡片上的下拉選單
-    cols.querySelectorAll('[data-move]').forEach(function (sel) {
-      sel.addEventListener('change', function () {
-        L.moveItem(sel.getAttribute('data-move'), sel.value).then(render);
+    /* 觸控沒有拖曳，改狀態走卡片右上角的「移動到…」 */
+    cols.querySelectorAll('[data-menu-btn]').forEach(function (btn) {
+      var wrap = btn.parentElement;
+      var menu = wrap.querySelector('[data-menu]');
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var open = menu.classList.contains('hidden');
+        closeMenus(open ? menu : null);
+        menu.classList.toggle('hidden', !open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        /* 選單開著的時候按鈕不能跟著 hover 消失 */
+        btn.style.opacity = open ? '1' : '';
+        if (open && menu.scrollIntoView) menu.scrollIntoView({ block: 'nearest', inline: 'nearest' });
       });
-      sel.addEventListener('click', function (e) { e.stopPropagation(); });
+      btn.addEventListener('focus', function () { btn.style.opacity = '1'; });
+      btn.addEventListener('blur', function () {
+        if (menu.classList.contains('hidden')) btn.style.opacity = '';
+      });
+      /* 按這顆不該把卡片拖起來 */
+      btn.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+    });
+
+    cols.querySelectorAll('[data-move-to]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var host = b.closest('[data-card]');
+        if (!host) return;
+        closeMenus(null);
+        L.moveItem(host.getAttribute('data-card'), b.getAttribute('data-move-to')).then(render);
+      });
     });
   }
 
@@ -262,7 +424,7 @@ window.Log.ready(function () {
   }
 
   function scrollByColumn(dir) {
-    var col = scroller.querySelector('[data-drop]');
+    var col = scroller.querySelector('[data-col="wide"]') || scroller.querySelector('[data-drop]');
     var step = col ? col.getBoundingClientRect().width + 12 : 300;
     scroller.scrollBy({ left: dir * step, behavior: 'smooth' });
   }
@@ -370,7 +532,7 @@ window.Log.ready(function () {
     if (!calPop.classList.contains('hidden') && !calPop.contains(e.target)) closeCal();
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') closeCal();
+    if (e.key === 'Escape') { closeCal(); closeMenus(null); }
   });
 
   function render() {
@@ -389,16 +551,23 @@ window.Log.ready(function () {
     if (crumb) crumb.textContent = scope === 'day' && day ? '看板　' + L.fileName(day) : '看板';
 
     document.getElementById('board-count').textContent = items.length + ' 件';
+    renderFilter(items.length);
     renderScope();
     renderPending();
     wire();
     if (window.Shell && window.Shell.refreshBadge) window.Shell.refreshBadge();
     updateEdges();
     if (!calPop.classList.contains('hidden')) renderCal();
-    try {
-      history.replaceState(null, '', scope === 'day' && day ? 'board.html?d=' + day : 'board.html');
-    } catch (e) {}
+    var url = scope === 'day' && day ? 'board.html?d=' + day : 'board.html';
+    if (window.Shell && window.Shell.withSearch) url = window.Shell.withSearch(url);
+    try { history.replaceState(null, '', url); } catch (e) {}
   }
+
+  /* 工具列的搜尋框改了關鍵字就重畫，資料不用重讀 */
+  document.addEventListener('worklog:search', function (e) {
+    query = e.detail || '';
+    render();
+  });
 
   render();
 });

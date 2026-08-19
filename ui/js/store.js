@@ -124,9 +124,49 @@
     '</span>';
   }
 
-  function statusLabel(id) {
+  /* 畫面上一律顯示中文——日誌檔裡寫的就是中文，兩邊對得起來。
+     英文（Todo/Parked…）只留在 id 與程式碼裡。 */
+  function statusText(id) {
     var s = statusById(id);
-    return s ? s.label : '';
+    return s ? s.zh : '';
+  }
+
+  function statusLabel(id) {
+    return statusText(id);
+  }
+
+  /* ---------- 搜尋比對 ----------
+     工具列的搜尋框只負責關鍵字，實際要濾什麼欄位由各頁自己決定，
+     但比對規則三頁一致，所以放在這裡：
+       - 一律不分大小寫
+       - 關鍵字用空白切成多個詞，**每個詞都要命中**（AND）
+       - 空字串或只有空白＝不過濾，全部留著
+     中文沒有大小寫，toLowerCase() 對它是原樣返回，不影響比對。 */
+  function searchTerms(q) {
+    return String(q == null ? '' : q).toLowerCase().split(/\s+/).filter(function (t) { return t; });
+  }
+
+  /* fields 是這一筆可以被搜到的所有文字（標題、專案、狀態標籤、網址…），
+     null／undefined／空字串會被忽略，不用在呼叫端先過濾一次。 */
+  function matchesSearch(fields, q) {
+    var terms = searchTerms(q);
+    if (!terms.length) return true;
+    var hay = (fields || []).filter(function (v) {
+      return v !== null && v !== undefined && v !== false && v !== '';
+    }).join(' ').toLowerCase();
+    return terms.every(function (t) { return hay.indexOf(t) >= 0; });
+  }
+
+  /* 一筆日誌條目的可搜文字：標題、專案、狀態的中英文標籤、連結網址 */
+  function entrySearchFields(e) {
+    var st = e && e.status ? statusById(e.status) : null;
+    return [e.title, e.project, st ? st.label : '', st ? st.zh : '', e.url];
+  }
+
+  /* 一支工作項目的可搜文字：標題、專案、狀態標籤、議題／MR 網址、項目 id */
+  function itemSearchFields(it) {
+    var st = it && it.status ? statusById(it.status) : null;
+    return [it.title, it.project, st ? st.label : '', st ? st.zh : '', it.issue, it.mr, it.id];
   }
 
   /* ---------- 連結判斷 ---------- */
@@ -515,10 +555,15 @@
     statusById: statusById,
     statusByZh: statusByZh,
     statusLabel: statusLabel,
+    statusText: statusText,
     statusClass: statusClass,
     groupClass: groupClass,
     eventRow: eventRow,
     statusDotClass: statusDotClass,
+    searchTerms: searchTerms,
+    matchesSearch: matchesSearch,
+    entrySearchFields: entrySearchFields,
+    itemSearchFields: itemSearchFields,
     detectKind: detectKind,
     kindLabel: kindLabel,
     linkSource: linkSource,

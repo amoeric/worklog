@@ -18,41 +18,43 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
 
-  <!-- 標題列：日期大字在左，換日在右 -->
-  <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-3 pt-4 md:px-6" data-od-id="date-headline">
-    <h1 id="date-code" class="font-display shrink-0 font-mono text-3xl font-bold tabular-nums tracking-tightest md:text-4xl" data-od-id="date-code"></h1>
-    <span id="date-long" class="shrink-0 self-end pb-1 text-muted dark:text-dmuted" data-od-id="date-long"></span>
-    <span id="date-count" class="ml-auto shrink-0 tabular-nums text-muted dark:text-dmuted" data-od-id="date-count"></span>
-    <div class="flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface p-1 shadow-sm dark:border-dline dark:bg-dsurface" data-od-id="date-nav">
-      <button id="btn-prev" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="往前"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
-      <button id="btn-today" class="rounded-full px-3 py-1 leading-tight text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" data-od-id="btn-today">今天</button>
-      <button id="btn-next" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="往後"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+  <!-- 頁首：日期、範圍、換日全部併成一排，底下只留一條髮絲線 -->
+  <div class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-3 border-b border-line px-4 pb-3 pt-4 dark:border-dline md:px-6" data-od-id="date-headline">
+
+    <!-- 左：日期大字，底下一行小字把長日期、今天、筆數、檔名收在一起 -->
+    <div class="min-w-0 shrink-0">
+      <h1 id="date-code" class="font-display font-mono text-[28px] font-bold leading-none tabular-nums tracking-tightest" data-od-id="date-code"></h1>
+      <p class="mt-1.5 flex flex-wrap items-center gap-x-1.5 leading-tight text-muted dark:text-dmuted" data-od-id="date-sub">
+        <span id="date-meta"></span>
+        <span id="file-sep" class="hidden" aria-hidden="true">·</span>
+        <button id="file-name" title="用系統預設程式開這個檔" class="hidden font-mono underline-offset-4 hover:text-ink hover:underline dark:hover:text-dink"></button>
+      </p>
     </div>
-  </div>
 
-  <!-- 範圍：單日或一段期間 -->
-  <div class="flex shrink-0 flex-wrap items-center gap-2 px-4 pb-3 md:px-6" data-od-id="range-toolbar">
-    <div id="range-tabs" class="flex shrink-0 items-center gap-0.5 rounded-full bg-accentsoft p-1 dark:bg-daccentsoft"></div>
-    <div id="custom-range" class="hidden flex-wrap items-center gap-2">
-      <input id="from-date" type="date" class="shrink-0 rounded-lg border border-line bg-surface px-2 py-1.5 shadow-sm dark:border-dline dark:bg-dsurface" aria-label="起始日">
-      <span class="shrink-0 text-muted dark:text-dmuted">到</span>
-      <input id="to-date" type="date" class="shrink-0 rounded-lg border border-line bg-surface px-2 py-1.5 shadow-sm dark:border-dline dark:bg-dsurface" aria-label="結束日">
+    <!-- 中：範圍（單日或一段期間） -->
+    <div class="flex min-w-0 flex-1 flex-wrap items-center justify-center gap-2" data-od-id="range-toolbar">
+      <div id="range-tabs" class="flex shrink-0 items-center gap-0.5 rounded-full bg-accentsoft p-1 dark:bg-daccentsoft"></div>
+      <div id="custom-range" class="hidden flex-wrap items-center gap-2">
+        <input id="from-date" type="date" class="shrink-0 rounded-lg border border-line bg-surface px-2 py-1.5 shadow-sm dark:border-dline dark:bg-dsurface" aria-label="起始日">
+        <span class="shrink-0 text-muted dark:text-dmuted">到</span>
+        <input id="to-date" type="date" class="shrink-0 rounded-lg border border-line bg-surface px-2 py-1.5 shadow-sm dark:border-dline dark:bg-dsurface" aria-label="結束日">
+      </div>
+      <span id="range-note" class="min-w-0 truncate text-muted dark:text-dmuted"></span>
     </div>
-    <span id="range-note" class="min-w-0 truncate text-muted dark:text-dmuted"></span>
-  </div>
 
-  <!-- 檔案與動作 -->
-  <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 pb-3 dark:border-dline md:px-6" data-od-id="date-toolbar">
-    <button id="file-name" title="用系統預設程式開這個檔" class="shrink-0 rounded-full bg-accentsoft px-2.5 py-1 font-mono leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink"></button>
-    <span class="min-w-0 text-muted dark:text-dmuted">唯讀。日誌由 Claude 寫進檔案，這裡只負責讀。</span>
-
-    <div class="relative ml-auto shrink-0">
-      <button id="btn-cal" class="rounded-full border border-line bg-surface px-3 py-1.5 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft" aria-haspopup="dialog" aria-expanded="false" data-od-id="btn-calendar">日曆</button>
+    <!-- 右：往前、日曆、往後（「今天」收進日曆彈出層） -->
+    <div class="relative ml-auto shrink-0" data-od-id="date-nav">
+      <div class="flex items-center gap-1 rounded-full border border-line bg-surface p-1 shadow-sm dark:border-dline dark:bg-dsurface">
+        <button id="btn-prev" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="往前"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <button id="btn-cal" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-haspopup="dialog" aria-expanded="false" aria-label="日曆" title="日曆" data-od-id="btn-calendar"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg></button>
+        <button id="btn-next" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="往後"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+      </div>
       <div id="cal-pop" class="absolute right-0 top-full z-20 mt-2 hidden w-[20rem] rounded-xl border border-line bg-surface p-3 shadow-pop dark:border-dline dark:bg-dsurface" role="dialog" aria-label="選擇日期" data-od-id="calendar-popover"></div>
     </div>
-
-    <a id="to-board" href="board.html" class="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft">看板</a>
   </div>
+
+  <!-- 開著過濾的時候要看得出來 -->
+  <div id="filter-bar" class="hidden shrink-0 px-4 pt-3 md:px-6" data-od-id="filter-bar"></div>
 
   <div id="scroll" class="min-h-0 flex-1 overflow-y-auto px-4 pb-10 pt-4 md:px-6">
     <div id="list" class="w-full" data-od-id="log-sections"></div>
@@ -83,20 +85,23 @@ window.Log.ready(function () {
 
   var calMonth = null;
 
+  /* 搜尋：關鍵字由工具列的搜尋框管，這裡只負責過濾與重畫 */
+  var query = (window.Shell && window.Shell.searchQuery) ? window.Shell.searchQuery() : '';
+
   var el = {
     list: document.getElementById('list'),
     code: document.getElementById('date-code'),
-    long: document.getElementById('date-long'),
-    count: document.getElementById('date-count'),
+    meta: document.getElementById('date-meta'),
     file: document.getElementById('file-name'),
+    fileSep: document.getElementById('file-sep'),
     cal: document.getElementById('cal-pop'),
     scroll: document.getElementById('scroll'),
-    board: document.getElementById('to-board'),
     tabs: document.getElementById('range-tabs'),
     note: document.getElementById('range-note'),
     customBox: document.getElementById('custom-range'),
     fromInput: document.getElementById('from-date'),
     toInput: document.getElementById('to-date'),
+    filter: document.getElementById('filter-bar'),
   };
 
   /* 群組內嵌清單：白面板 + 髮絲線分隔，最後一列不畫線 */
@@ -107,6 +112,30 @@ window.Log.ready(function () {
     return String(s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
+  }
+
+  /* 這一天過濾後剩下的條目。序號保留原本在檔案裡的位置，
+     data-od-id 才不會因為關鍵字而整個跳掉。 */
+  function keptEntries(code) {
+    return L.entriesOf(code).map(function (e, i) {
+      return { item: e, index: i };
+    }).filter(function (g) {
+      return L.matchesSearch(L.entrySearchFields(g.item), query);
+    });
+  }
+
+  /* 單日的專案分區，整區都被濾掉就不要留空殼 */
+  function keptGroups(code) {
+    return L.grouped(code).map(function (g) {
+      return {
+        project: g.project,
+        items: g.items.filter(function (x) { return L.matchesSearch(L.entrySearchFields(x.item), query); }),
+      };
+    }).filter(function (g) { return g.items.length; });
+  }
+
+  function filtering() {
+    return L.searchTerms(query).length > 0;
   }
 
   function modeById(id) {
@@ -151,15 +180,24 @@ window.Log.ready(function () {
     return String(Number(m[1]) - 1911) + m[2] + m[3];
   }
 
+  /* 頁首小字用的日期：8月18日 星期二 */
+  function dayLabel(code) {
+    var p = L.parts(code);
+    var w = L.WEEKDAYS[new Date(p.roc + 1911, p.month - 1, p.day).getDay()];
+    return p.month + '月' + p.day + '日 星期' + w;
+  }
+
   function syncUrl() {
-    try { history.replaceState(null, '', 'daily-log.html?d=' + anchor + '&range=' + mode); } catch (e) {}
+    var url = 'daily-log.html?d=' + anchor + '&range=' + mode;
+    if (window.Shell && window.Shell.withSearch) url = window.Shell.withSearch(url);
+    try { history.replaceState(null, '', url); } catch (e) {}
   }
 
   /* ---------- 條目 ---------- */
   function statusChip(id) {
-    var st = L.statusById(id);
-    if (!st) return '';
-    return '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass(id) + '" title="' + st.zh + '">' + st.label + '</span>';
+    var text = L.statusText(id);
+    if (!text) return '';
+    return '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass(id) + '">' + text + '</span>';
   }
 
   function pendingChip() {
@@ -209,7 +247,7 @@ window.Log.ready(function () {
 
   /* 跨日：一天一段，新的在上面 */
   function daySection(code) {
-    var entries = L.entriesOf(code);
+    var entries = keptEntries(code);
     return '' +
       '<section data-od-id="day-section-' + code + '" class="mb-6">' +
         '<div class="flex flex-wrap items-baseline gap-x-2.5 gap-y-1 px-3 pb-1.5">' +
@@ -219,13 +257,21 @@ window.Log.ready(function () {
           '<button data-goto="' + code + '" class="ml-auto shrink-0 text-muted underline-offset-4 hover:text-ink hover:underline dark:text-dmuted dark:hover:text-dink">只看這天</button>' +
         '</div>' +
         '<div class="' + PANEL + '">' +
-          entries.map(function (e, i) { return rowHTML(e, i, true); }).join('') +
+          entries.map(function (g) { return rowHTML(g.item, g.index, true); }).join('') +
         '</div>' +
       '</section>';
   }
 
   function emptyHTML() {
     var r = range();
+    if (filtering()) {
+      return '' +
+        '<div class="mt-4 rounded-xl border border-line bg-surface px-6 py-14 text-center dark:border-dline dark:bg-dsurface" data-od-id="empty-state">' +
+          '<p class="font-display text-xl font-semibold tracking-tight">沒有符合的條目</p>' +
+          '<p class="mx-auto mt-2 max-w-md text-muted dark:text-dmuted">這段期間裡沒有同時包含「' + esc(query) + '」每個詞的條目。</p>' +
+          '<button data-clear-filter class="mt-5 inline-block rounded-full bg-accent px-4 py-2 font-medium text-white shadow-sm hover:opacity-90 dark:bg-daccent">清除關鍵字</button>' +
+        '</div>';
+    }
     var what = isSingleDay()
       ? '找不到 <span class="font-mono">' + L.fileName(r.from) + '</span>。'
       : '<span class="font-mono">' + r.from + '</span> 到 <span class="font-mono">' + r.to + '</span> 之間沒有任何日誌檔。';
@@ -233,7 +279,23 @@ window.Log.ready(function () {
       '<div class="mt-4 rounded-xl border border-line bg-surface px-6 py-14 text-center dark:border-dline dark:bg-dsurface" data-od-id="empty-state">' +
         '<p class="font-display text-xl font-semibold tracking-tight">這段期間沒有紀錄</p>' +
         '<p class="mx-auto mt-2 max-w-md text-muted dark:text-dmuted">' + what + '請 Claude 幫你寫日誌，寫完這裡就會讀到。</p>' +
+        '<p class="mx-auto mt-1 max-w-md text-muted dark:text-dmuted">唯讀。日誌由 Claude 寫進檔案，這裡只負責讀。</p>' +
         '<a href="todo-list.html" class="mt-5 inline-block rounded-full bg-accent px-4 py-2 font-medium text-white shadow-sm hover:opacity-90 dark:bg-daccent">先去寫 TODO</a>' +
+      '</div>';
+  }
+
+  /* 開著過濾很容易忘記，所以直接寫出關鍵字與命中幾筆 */
+  function renderFilterBar(total) {
+    if (!filtering()) {
+      el.filter.classList.add('hidden');
+      el.filter.innerHTML = '';
+      return;
+    }
+    el.filter.classList.remove('hidden');
+    el.filter.innerHTML = '' +
+      '<div class="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-accentsoft px-3 py-2 dark:border-dline dark:bg-daccentsoft">' +
+        '<span class="min-w-0 flex-1 truncate">正在用「' + esc(query) + '」過濾，共 ' + total + ' 筆</span>' +
+        '<button data-clear-filter class="shrink-0 rounded-full border border-line bg-surface px-3 py-1 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-dpaper">清除</button>' +
       '</div>';
   }
 
@@ -262,9 +324,10 @@ window.Log.ready(function () {
 
   function render() {
     var r = range();
-    var codes = codesInRange();
+    /* 一整天都被濾掉就不要留空的區塊 */
+    var codes = codesInRange().filter(function (c) { return keptEntries(c).length; });
     var single = isSingleDay();
-    var total = codes.reduce(function (n, c) { return n + L.countOf(c); }, 0);
+    var total = codes.reduce(function (n, c) { return n + keptEntries(c).length; }, 0);
 
     renderTabs();
     el.customBox.classList.toggle('hidden', mode !== 'custom');
@@ -277,13 +340,23 @@ window.Log.ready(function () {
       : single ? '← → 換日' : '← → 整段前後移動';
 
     el.code.textContent = single ? r.from : r.from + ' – ' + r.to;
-    el.long.textContent = single
-      ? L.longLabel(r.from) + (r.from === L.today() ? '（今天）' : '')
-      : L.daysBetween(r.from, r.to) + 1 + ' 天，' + codes.length + ' 天有紀錄';
+
+    /* 日期底下那一行：長日期、今天、筆數，單日再把檔名接在尾巴 */
+    var bits = [];
+    if (single) {
+      bits.push(dayLabel(r.from));
+      if (r.from === L.today()) bits.push('今天');
+    } else {
+      bits.push(L.daysBetween(r.from, r.to) + 1 + ' 天');
+      bits.push(codes.length + ' 天有紀錄');
+    }
+    bits.push(total > 0 ? total + ' 項' : '沒有紀錄');
+    el.meta.textContent = bits.join(' · ');
+
+    /* 跨日期範圍沒有單一檔案可開，檔名連同分隔點一起收起來 */
     el.file.textContent = single ? L.fileName(r.from) : '';
     el.file.classList.toggle('hidden', !single);
-    el.count.textContent = total > 0 ? '共 ' + total + ' 項' : '沒有紀錄';
-    el.board.setAttribute('href', single ? 'board.html?d=' + r.from : 'board.html');
+    el.fileSep.classList.toggle('hidden', !single);
 
     var crumb = document.querySelector('[data-od-id="crumb"]');
     if (crumb) crumb.textContent = single ? L.fileName(r.from) : r.from + ' – ' + r.to;
@@ -291,10 +364,17 @@ window.Log.ready(function () {
     if (!codes.length) {
       el.list.innerHTML = emptyHTML();
     } else if (single) {
-      el.list.innerHTML = L.grouped(r.from).map(projectSection).join('');
+      el.list.innerHTML = keptGroups(r.from).map(projectSection).join('');
     } else {
       el.list.innerHTML = codes.map(daySection).join('');
     }
+
+    renderFilterBar(total);
+    document.querySelectorAll('[data-clear-filter]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (window.Shell && window.Shell.setSearchQuery) window.Shell.setSearchQuery('');
+      });
+    });
 
     el.list.querySelectorAll('[data-goto]').forEach(function (b) {
       b.addEventListener('click', function () { mode = 'day'; go(b.getAttribute('data-goto')); });
@@ -345,7 +425,13 @@ window.Log.ready(function () {
         L.WEEKDAYS.map(function (w) { return '<span class="py-1">' + w + '</span>'; }).join('') +
       '</div>' +
       '<div class="grid grid-cols-7 gap-0.5">' + cells + '</div>' +
-      '<p class="mt-2 text-muted dark:text-dmuted">' + (isSingleDay() ? '選一天' : '選這段的結束日') + '</p>';
+      '<div class="mt-2 flex items-center gap-2">' +
+        '<span class="min-w-0 flex-1 truncate text-muted dark:text-dmuted">' + (isSingleDay() ? '選一天' : '選這段的結束日') + '</span>' +
+        '<button data-today class="shrink-0 rounded-full border border-line bg-surface px-3 py-1 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft">回到今天</button>' +
+      '</div>';
+
+    var todayBtn = el.cal.querySelector('[data-today]');
+    if (todayBtn) todayBtn.addEventListener('click', function () { closeCal(); go(L.today()); });
 
     el.cal.querySelectorAll('[data-cal]').forEach(function (b) {
       b.addEventListener('click', function () {
@@ -394,7 +480,6 @@ window.Log.ready(function () {
 
   document.getElementById('btn-prev').addEventListener('click', function () { step(-1); });
   document.getElementById('btn-next').addEventListener('click', function () { step(1); });
-  document.getElementById('btn-today').addEventListener('click', function () { go(L.today()); });
   el.file.addEventListener('click', function () { L.openLogFile(range().from); });
   document.getElementById('btn-cal').addEventListener('click', function (e) {
     e.stopPropagation();
@@ -418,6 +503,13 @@ window.Log.ready(function () {
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) return;
     if (e.key === 'ArrowLeft') step(-1);
     if (e.key === 'ArrowRight') step(1);
+  });
+
+  /* 工具列的搜尋框改了關鍵字就重畫，資料不用重讀 */
+  document.addEventListener('worklog:search', function (e) {
+    query = e.detail || '';
+    el.scroll.scrollTop = 0;
+    render();
   });
 
   render();

@@ -16,6 +16,233 @@
     return f;
   }
 
+  /* HTML 轉義。MD 那一包裡面也有一份，但那是轉換器自己的信任邊界，
+     這裡的工具列另外留一份，兩邊互不影響。 */
+  function escHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  /* ---------- 搜尋 ----------
+     只有月曆、看板、日誌有東西可以濾，TODO 與設定不顯示搜尋框。
+     Shell 只管「輸入框與關鍵字」：關鍵字一變就丟一顆 worklog:search 事件出去，
+     怎麼過濾、怎麼重畫是各頁自己的事。
+     關鍵字記在網址的 ?q=，所以重新整理或切到別的分頁再回來都還在。 */
+  var SEARCH_PAGES = ['index.html', 'board.html', 'daily-log.html'];
+
+  function fileOf() {
+    return location.pathname.split('/').pop() || 'index.html';
+  }
+
+  function searchEnabled() {
+    return SEARCH_PAGES.indexOf(fileOf()) >= 0;
+  }
+
+  function readQuery() {
+    try { return new URLSearchParams(location.search).get('q') || ''; } catch (e) { return ''; }
+  }
+
+  var searchQ = readQuery();
+  var searchTimer = null;
+
+  function searchQuery() {
+    return searchQ;
+  }
+
+  /* 把目前的關鍵字接到網址後面。日誌與看板自己也會 replaceState，
+     那兩處要包一層這個，不然 ?q= 會被洗掉。 */
+  function withSearch(url) {
+    if (!searchQ) return url;
+    return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'q=' + encodeURIComponent(searchQ);
+  }
+
+  function syncSearchUrl() {
+    try {
+      var p = new URLSearchParams(location.search);
+      if (searchQ) p.set('q', searchQ); else p.delete('q');
+      var qs = p.toString();
+      history.replaceState(null, '', fileOf() + (qs ? '?' + qs : ''));
+    } catch (e) {}
+  }
+
+  /* 切分頁的時候關鍵字要跟著走，所以分段控制的連結也帶上 ?q=；
+     TODO 與設定沒有搜尋，就維持乾淨的網址。 */
+  function syncNavLinks() {
+    document.querySelectorAll('[data-nav-href]').forEach(function (a) {
+      var href = a.getAttribute('data-nav-href');
+      a.setAttribute('href', SEARCH_PAGES.indexOf(href) >= 0 ? withSearch(href) : href);
+    });
+  }
+
+  /* 關鍵字真的變了才通知頁面重畫 */
+  function applySearch(value) {
+    var next = String(value == null ? '' : value);
+    if (next === searchQ) return;
+    searchQ = next;
+    syncSearchUrl();
+    syncNavLinks();
+    var clear = document.querySelector('[data-shell-search-clear]');
+    if (clear) clear.classList.toggle('hidden', !searchQ);
+    document.dispatchEvent(new CustomEvent('worklog:search', { detail: searchQ }));
+    renderSearchResults();
+  }
+
+  /* 搜尋只會過濾當下這一頁，但別頁往往也有命中——算出來列在搜尋框底下，
+     點一下帶著關鍵字跳過去，才不用自己一頁一頁切。 */
+  function searchCounts(q) {
+    var L = window.Log;
+    if (!L || !L.matchesSearch || !L.allCodes) return null;
+    var days = 0;
+    var entries = 0;
+    L.allCodes().forEach(function (code) {
+      var hit = 0;
+      L.entriesOf(code).forEach(function (e) {
+        if (L.matchesSearch(L.entrySearchFields(e), q)) hit += 1;
+      });
+      if (hit) { days += 1; entries += hit; }
+    });
+    var items = 0;
+    L.allItems().forEach(function (it) {
+      if (L.matchesSearch(L.itemSearchFields(it), q)) items += 1;
+    });
+    return { days: days, entries: entries, items: items };
+  }
+
+  function renderSearchResults() {
+    var box = document.querySelector('[data-search-results]');
+    if (!box) return;
+    if (!searchQ) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+
+    var c = searchCounts(searchQ);
+    if (!c) { box.classList.add('hidden'); return; }
+
+    var here = currentPage();
+    var rows = [
+      { href: 'index.html', label: '月曆', n: c.days, unit: '天有命中' },
+      { href: 'board.html', label: '看板', n: c.items, unit: '支工作項目' },
+      { href: 'daily-log.html', label: '日誌', n: c.entries, unit: '筆條目' },
+    ];
+
+    box.innerHTML = rows.map(function (r) {
+      var current = r.href === here;
+      var muted = r.n === 0;
+      return '<a href="' + withSearch(r.href) + '" class="flex items-center gap-3 border-b border-line px-3 py-2.5 last:border-b-0 dark:border-dline ' +
+        (current ? 'bg-accentsoft dark:bg-daccentsoft ' : 'hover:bg-accentsoft dark:hover:bg-daccentsoft ') +
+        (muted ? 'text-muted dark:text-dmuted' : 'text-ink dark:text-dink') + '">' +
+          '<span class="min-w-0 flex-1 truncate">' + r.label + '</span>' +
+          '<span class="shrink-0 tabular-nums">' + r.n + '</span>' +
+          '<span class="shrink-0 text-muted dark:text-dmuted">' + r.unit + '</span>' +
+          (current ? '<span class="shrink-0 text-muted dark:text-dmuted">目前</span>' : '') +
+        '</a>';
+    }).join('');
+    box.classList.remove('hidden');
+  }
+
+  function closeSearchResults() {
+    var box = document.querySelector('[data-search-results]');
+    if (box) { box.classList.add('hidden'); }
+  }
+
+  function searchResultsOpen() {
+    var box = document.querySelector('[data-search-results]');
+    return !!(box && !box.classList.contains('hidden'));
+  }
+
+  /* 給頁面用：例如過濾提示條上的「清除」 */
+  function setSearchQuery(value) {
+    var input = document.querySelector('[data-shell-search]');
+    if (input) input.value = value || '';
+    if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; }
+    applySearch(value || '');
+  }
+
+  /* 膠囊搜尋框：左邊放大鏡（跟主題鈕同一套 stroke 畫法），有字才出現右邊的清除鈕。
+     寬度給上限，窄視窗就自己縮，不會把麵包屑擠掉。 */
+  function searchBox() {
+    return '' +
+      '<div class="relative ml-1 flex min-w-0 max-w-[16rem] flex-1 basis-20 items-center" data-od-id="search-box">' +
+        '<svg class="pointer-events-none absolute left-2.5 h-4 w-4 text-muted dark:text-dmuted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5L20 20"/></svg>' +
+        '<input data-shell-search type="text" value="' + escHtml(searchQ) + '" placeholder="搜尋" aria-label="搜尋關鍵字" ' +
+          'class="w-full min-w-0 rounded-full border border-line bg-surface py-1 pl-8 pr-7 leading-tight text-ink shadow-sm placeholder:text-muted focus:border-muted focus:outline-none dark:border-dline dark:bg-dsurface dark:text-dink dark:placeholder:text-dmuted dark:focus:border-dmuted">' +
+        '<button data-shell-search-clear class="absolute right-1.5 grid h-5 w-5 place-items-center rounded-full text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink' + (searchQ ? '' : ' hidden') + '" aria-label="清除搜尋">' +
+          '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>' +
+        '</button>' +
+        '<div data-search-results class="absolute left-0 top-full z-40 mt-2 hidden w-72 overflow-hidden rounded-xl border border-line bg-surface shadow-pop dark:border-dline dark:bg-dsurface"></div>' +
+      '</div>';
+  }
+
+  /* 打字不要每個字都重畫，等 150ms；中文輸入法組字中更是一個字都不能算，
+     組字期間輸入框裡是注音符號，拿去濾一定是空的。
+     判斷照 todo-list.html 那套 imeGuard：composing 旗標、isComposing、keyCode 229，
+     再加上 compositionend 之後極短時間的緩衝（WKWebView 會先送 compositionend 才送 keydown）。 */
+  function wireSearchResults() {
+    var box = document.querySelector('[data-search-results]');
+    var input = document.querySelector('[data-shell-search]');
+    if (!box || !input) return;
+    input.addEventListener('focus', function () { if (searchQ) renderSearchResults(); });
+    document.addEventListener('click', function (e) {
+      var wrap = e.target && e.target.closest ? e.target.closest('[data-od-id="search-box"]') : null;
+      if (!wrap) closeSearchResults();
+    }, true);
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') closeSearchResults();
+    });
+  }
+
+  function wireSearch() {
+    var input = document.querySelector('[data-shell-search]');
+    if (!input) return;
+    var composing = false;
+    var endedAt = 0;
+
+    function schedule() {
+      if (searchTimer) clearTimeout(searchTimer);
+      searchTimer = setTimeout(function () {
+        searchTimer = null;
+        applySearch(input.value);
+      }, 150);
+    }
+
+    input.addEventListener('compositionstart', function () { composing = true; });
+    input.addEventListener('compositionend', function () {
+      composing = false;
+      endedAt = Date.now();
+      schedule();                       /* 選完字才算數 */
+    });
+    input.addEventListener('input', function (e) {
+      if (composing || e.isComposing) return;
+      schedule();
+    });
+    input.addEventListener('keydown', function (e) {
+      if (composing || e.isComposing || e.keyCode === 229 || (Date.now() - endedAt) < 120) return;
+      if (e.key === 'Escape') { e.preventDefault(); setSearchQuery(''); input.blur(); }
+      else if (e.key === 'Enter') { e.preventDefault(); setSearchQuery(input.value); }
+    });
+
+    var clear = document.querySelector('[data-shell-search-clear]');
+    if (clear) {
+      clear.addEventListener('click', function () {
+        setSearchQuery('');
+        input.focus();
+      });
+    }
+
+    /* ⌘F（Windows／Linux 是 Ctrl+F）聚焦到搜尋框 */
+    document.addEventListener('keydown', function (e) {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      if (e.key !== 'f' && e.key !== 'F') return;
+      e.preventDefault();
+      input.focus();
+      input.select();
+    });
+
+    syncNavLinks();
+  }
+
   function themeButton() {
     return '' +
       '<button data-theme-toggle class="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-line bg-surface text-muted shadow-sm hover:text-ink dark:border-dline dark:bg-dsurface dark:text-dmuted dark:hover:text-dink" aria-label="切換深淺色">' +
@@ -737,7 +964,8 @@
   function segmented(here) {
     var segs = NAV.map(function (n) {
       var active = n.href === here;
-      return '<a href="' + n.href + '"' + (active ? ' aria-current="page"' : '') +
+      return '<a href="' + (SEARCH_PAGES.indexOf(n.href) >= 0 ? withSearch(n.href) : n.href) + '"' +
+        ' data-nav-href="' + n.href + '"' + (active ? ' aria-current="page"' : '') +
         ' class="shrink-0 rounded-full px-4 py-1.5 leading-tight ' +
         (active
           ? 'bg-surface font-semibold text-ink shadow-sm dark:bg-dline dark:text-dink'
@@ -758,6 +986,7 @@
             '<a href="index.html" class="shrink-0 font-display font-semibold tracking-tight">工作日誌</a>' +
             (crumb ? '<span class="shrink-0 text-muted dark:text-dmuted">/</span>' +
                      '<span class="min-w-0 truncate text-muted dark:text-dmuted" data-od-id="crumb">' + crumb + '</span>' : '') +
+            (searchEnabled() ? searchBox() : '') +
           '</div>' +
           '<div class="order-last flex justify-center overflow-x-auto md:order-none">' + segmented(here) + '</div>' +
           '<div class="flex items-center justify-end gap-2">' +
@@ -805,9 +1034,15 @@
       n.outerHTML = topbar(n.getAttribute('data-crumb') || '', n.getAttribute('data-tab') || '');
     });
     if (window.Theme && window.Theme.mount) window.Theme.mount();
+    wireSearch();
     interceptExternalLinks();
+    wireSearchResults();
     if (window.Log && window.Log.ready) {
-      window.Log.ready(function () { refreshBadge(); banner(); });
+      window.Log.ready(function () {
+        refreshBadge();
+        banner();
+        if (searchResultsOpen()) renderSearchResults();
+      });
     }
   }
 
@@ -816,8 +1051,13 @@
     topbar: topbar,
     themeButton: themeButton,
     refreshBadge: refreshBadge,
+    toast: toast,
     openLinkPanel: openLinkPanel,
     renderMarkdown: MD.render,
+    searchQuery: searchQuery,
+    renderSearchResults: renderSearchResults,
+    setSearchQuery: setSearchQuery,
+    withSearch: withSearch,
   };
   document.addEventListener('DOMContentLoaded', mount);
 })();

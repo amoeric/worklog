@@ -111,7 +111,7 @@ window.Log.ready(function () {
     }).join('') + '<option value="__new__">＋ 新增專案…</option>';
 
     elStatus.innerHTML = '<option value="">不標狀態</option>' + L.statuses().map(function (s) {
-      return '<option value="' + s.id + '">' + s.label + '（' + s.zh + '）</option>';
+      return '<option value="' + s.id + '">' + s.zh + '</option>';
     }).join('');
   }
 
@@ -126,7 +126,7 @@ window.Log.ready(function () {
   function statusChip(id) {
     var st = L.statusById(id);
     if (!st) return '';
-    return '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass(id) + '" title="日誌檔裡會寫成 ' + st.zh + '">' + st.label + '</span>';
+    return '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass(id) + '">' + st.zh + '</span>';
   }
 
   function row(t) {
@@ -160,7 +160,7 @@ window.Log.ready(function () {
 
     var statusOptions = '<option value=""' + (t.status ? '' : ' selected') + '>不標狀態</option>' +
       L.statuses().map(function (s) {
-        return '<option value="' + s.id + '"' + (s.id === t.status ? ' selected' : '') + '>' + s.label + '（' + s.zh + '）</option>';
+        return '<option value="' + s.id + '"' + (s.id === t.status ? ' selected' : '') + '>' + s.zh + '</option>';
       }).join('');
 
     return '' +
