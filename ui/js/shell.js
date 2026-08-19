@@ -1029,6 +1029,51 @@
     }, kind === 'error' ? 6000 : 3500);
   }
 
+  /* ---------- 有新版就講一聲 ----------
+     開 app 之後在背景查一次（每次開 app 只查一次，所以記在 sessionStorage，換頁不會重查）。
+     連不上、還沒有 Release 這種情況一律安靜略過：使用者沒有要求檢查，不該被錯誤打斷。
+     真的有新版才浮一顆通知，按「更新」就到設定頁的「版本與更新」那一區，
+     下載、安裝、失敗了怎麼辦都在那裡處理。 */
+  var UPDATE_FLAG = 'worklog:update-checked';
+
+  function updateToast(version) {
+    toast('有新版 v' + version);
+    var box = document.querySelector('[data-toast]');
+    var item = box && box.lastElementChild;
+    if (!item) return;
+
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = '更新';
+    btn.className = 'ml-3 shrink-0 rounded-full border border-line bg-surface px-3 py-0.5 leading-tight text-accent ' +
+      'hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:text-daccent dark:hover:bg-daccentsoft';
+    btn.addEventListener('click', function () { location.href = 'settings.html#update'; });
+    item.appendChild(btn);
+
+    /* 有動作可以按的通知，3.5 秒太短了，留久一點再淡掉 */
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      item.style.opacity = '0';
+      setTimeout(function () { if (item.parentNode) item.parentNode.removeChild(item); }, 200);
+    }, 12000);
+  }
+
+  function autoCheckUpdate() {
+    if (!window.Log || !window.Log.checkUpdate) return;
+    if (currentPage() === 'settings.html') return;   // 那一頁自己就有「版本與更新」
+    try {
+      if (sessionStorage.getItem(UPDATE_FLAG)) return;
+      sessionStorage.setItem(UPDATE_FLAG, '1');
+    } catch (e) { return; }
+
+    /* 開 app 的頭幾秒讓給讀日誌，晚一點再打網路 */
+    setTimeout(function () {
+      window.Log.checkUpdate().then(function (info) {
+        if (info && info.available) updateToast(info.version);
+      }).catch(function () { /* 安靜略過 */ });
+    }, 2000);
+  }
+
   function mount() {
     document.querySelectorAll('[data-shell="topbar"]').forEach(function (n) {
       n.outerHTML = topbar(n.getAttribute('data-crumb') || '', n.getAttribute('data-tab') || '');
@@ -1037,6 +1082,7 @@
     wireSearch();
     interceptExternalLinks();
     wireSearchResults();
+    autoCheckUpdate();
     if (window.Log && window.Log.ready) {
       window.Log.ready(function () {
         refreshBadge();

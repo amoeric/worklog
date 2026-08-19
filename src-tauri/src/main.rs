@@ -5,6 +5,8 @@ use worklog_app::commands;
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // 線上更新：設定在 tauri.conf.json 的 plugins.updater
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::load_settings,
             commands::save_settings,
@@ -24,6 +26,10 @@ fn main() {
             commands::open_url,
             commands::open_log_file,
             commands::append_entry,
+            commands::app_version,
+            commands::check_update,
+            commands::install_update,
+            commands::restart_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

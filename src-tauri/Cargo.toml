@@ -19,3 +19,5 @@ open = "5"
 # 只拿來打 Redmine／GitLab 的 API；用 rustls 免得綁系統 OpenSSL
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "json", "rustls", "charset"] }
 urlencoding = "2"
+# 線上更新：檢查 GitHub Releases 上的 latest.json，下載並換掉自己
+tauri-plugin-updater = "2"

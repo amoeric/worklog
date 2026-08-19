@@ -489,6 +489,36 @@ pub fn append_entry(
     append_entry_in(&folder, &today_code(), &project, &status, &text, &url)
 }
 
+/* ---------- 線上更新 ----------
+   真正的邏輯在 update.rs，這裡只是薄薄一層指令。
+   錯誤訊息已經在後端翻成中文，前端直接顯示就好。 */
+
+/// 目前跑的版本號與下載頁。前端不要自己寫死版本，一律問這裡。
+#[tauri::command]
+pub fn app_version(app: tauri::AppHandle) -> crate::update::AppVersion {
+    crate::update::app_version(&app)
+}
+
+/// 問更新來源有沒有新版。只讀 latest.json，不下載更新檔。
+#[tauri::command]
+pub async fn check_update(app: tauri::AppHandle) -> Result<crate::update::UpdateInfo, String> {
+    crate::update::check(app).await
+}
+
+/// 下載並安裝新版。下載期間會一直丟 `worklog://update-progress` 事件出去。
+///
+/// 裝完不會自己重開，前端顯示完訊息再呼叫 [`restart_app`]。
+#[tauri::command]
+pub async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    crate::update::install(app).await
+}
+
+/// 重開 app，讓剛裝好的版本跑起來
+#[tauri::command]
+pub fn restart_app(app: tauri::AppHandle) {
+    crate::update::restart(app);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

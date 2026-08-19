@@ -6,6 +6,7 @@
    因為要等後端，每一頁的畫面程式都要包在 Log.ready(function () { ... }) 裡。 */
 (function () {
   var invoke = (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) || null;
+  var listen = (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) || null;
 
   /* ---------- 民國日期 ---------- */
   var WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
@@ -485,6 +486,37 @@
     return invoke ? invoke('save_rules', { text: text }) : Promise.resolve(null);
   }
 
+  /* ---------- 線上更新 ----------
+     更新檔在 GitHub Releases，後端接的是 Tauri 官方的 updater。
+     這個 app 是 ad-hoc 簽章、沒有 Apple 公證，所以更新有可能被 macOS 擋下來：
+     裝不起來的時候後端會回一句中文原因，畫面要照樣給「開啟下載頁」讓使用者自己抓。 */
+  var UPDATE_PROGRESS = 'worklog://update-progress';
+
+  /* 目前跑的版本，來自 tauri.conf.json，前端不要自己寫死 */
+  function appVersion() {
+    return invoke ? invoke('app_version') : Promise.resolve('');
+  }
+
+  function checkUpdate() {
+    if (!invoke) return Promise.reject(new Error('不在 app 裡，不能檢查更新'));
+    return invoke('check_update');
+  }
+
+  function installUpdate() {
+    if (!invoke) return Promise.reject(new Error('不在 app 裡，不能安裝更新'));
+    return invoke('install_update');
+  }
+
+  function restartApp() {
+    return invoke ? invoke('restart_app') : Promise.resolve();
+  }
+
+  /* 下載進度。回傳一個取消訂閱的 function（拿不到事件就回一個空的）。 */
+  function onUpdateProgress(fn) {
+    if (!listen) return Promise.resolve(function () {});
+    return listen(UPDATE_PROGRESS, function (e) { fn(e.payload || {}); });
+  }
+
   /* ---------- 開機 ---------- */
   function ingest(ws, table, todoList) {
     STATUSES = table;
@@ -608,6 +640,11 @@
     clearToken: clearToken,
     loadRules: loadRules,
     saveRules: saveRules,
+    appVersion: appVersion,
+    checkUpdate: checkUpdate,
+    installUpdate: installUpdate,
+    restartApp: restartApp,
+    onUpdateProgress: onUpdateProgress,
     reload: reload,
     ready: ready,
   };

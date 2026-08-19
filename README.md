@@ -46,6 +46,77 @@ magick -size 1024x1024 xc:none /tmp/i.png -gravity center -composite /tmp/icon.p
 cargo tauri icon /tmp/icon.png          # 會蓋掉 src-tauri/icons/
 ```
 
+## 發新版
+
+更新檔放在 GitHub Releases（<https://github.com/amoeric/worklog>），app 去讀的是固定網址
+`https://github.com/amoeric/worklog/releases/latest/download/latest.json`。
+
+1. 改 `src-tauri/tauri.conf.json` 的 `version`（例如 `0.1.0` → `0.1.1`）。
+   版號只能往上加，app 會比對版號，比現在的小或一樣就當作沒有新版。
+2. 帶著私鑰打包（`bundle.createUpdaterArtifacts` 已經開著，所以會多產出更新檔與簽章）：
+
+```sh
+cd src-tauri
+TAURI_SIGNING_PRIVATE_KEY_PATH=~/.tauri/worklog.key \
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD= \
+cargo tauri build
+```
+
+3. 產出在 `src-tauri/target/release/bundle/macos/`：
+   - `每日工作日誌.app.tar.gz` ← 更新檔
+   - `每日工作日誌.app.tar.gz.sig` ← 簽章，內容是一串 base64，等一下要整個貼進 `latest.json`
+4. 在 GitHub 開一個 Release（tag 例如 `v0.1.1`），把 `.app.tar.gz` 與**自己寫的 `latest.json`** 一起上傳。
+   `latest.json` 這個檔名不能改，endpoint 是寫死的。
+
+`latest.json` 長這樣：
+
+```json
+{
+  "version": "0.1.1",
+  "notes": "設定頁加了「版本與更新」，可以在 app 裡檢查與安裝新版。",
+  "pub_date": "2026-08-19T10:00:00Z",
+  "platforms": {
+    "darwin-aarch64": {
+      "signature": "把 .app.tar.gz.sig 的內容整個貼進來",
+      "url": "https://github.com/amoeric/worklog/releases/download/v0.1.1/%E6%AF%8F%E6%97%A5%E5%B7%A5%E4%BD%9C%E6%97%A5%E8%AA%8C.app.tar.gz"
+    }
+  }
+}
+```
+
+- `version` 不要加 `v`，要跟 `tauri.conf.json` 的一致
+- `pub_date` 是 RFC 3339，app 只顯示前面的 `YYYY-MM-DD`
+- `notes` 會原樣顯示在設定頁的「版本與更新」，寫給人看的中文就好
+- `platforms` 的 key 是「系統-架構」：Apple Silicon 是 `darwin-aarch64`，Intel 是 `darwin-x86_64`。
+  兩種機器都要照顧就各打一份、各放一個 key；沒有對應的 key，那台機器會被告知「沒有這台機器的平台」
+- `url` 直接複製 Release 頁面上那顆檔案的連結最保險（檔名有中文的話 GitHub 會自己 percent-encode）
+
+### 私鑰
+
+簽章用的私鑰在 `~/.tauri/worklog.key`，對應的公鑰已經寫在 `tauri.conf.json` 的
+`plugins.updater.pubkey`。
+
+- **弄丟就再也發不了更新。** app 只認這一把私鑰簽出來的更新檔，換一把等於要每個人手動重裝
+- **絕對不能進版控**，也不要貼進 issue、log 或截圖
+- 打包時用環境變數餵進去就好，不要寫進任何檔案
+
+### 線上更新不保證成功
+
+這個 app 是 ad-hoc 簽章、**沒有 Apple 公證**。從 GitHub 下載回來的 `.app.tar.gz` 會帶
+quarantine 標記，macOS 有可能直接擋下來或跳警告，所以更新這件事只能盡力，不能保證：
+
+- 設定頁的「版本與更新」失敗時會寫出是哪一種問題（連不上／還沒有 Release／簽章對不上／沒有權限…）
+- 旁邊一直留著「開啟下載頁」，隨時可以自己抓下來換
+- 手動換完記得 `xattr -dr com.apple.quarantine <app>`，必要時再 `codesign --force --deep --sign - <app>`
+
+## 更新提示
+
+開 app 之後會在背景查一次有沒有新版（每次開 app 只查一次，換分頁不會重查）：
+
+- 有新版才會在右上角浮一則「有新版 vX.Y.Z」，按「更新」就跳到設定頁的「版本與更新」
+- 查不到、連不上、還沒有任何 Release 一律安靜略過，不會跳錯誤打斷你
+- 想主動查就去設定頁按「檢查更新」；那裡也顯示目前版本、更新說明、下載進度
+
 ## 設定
 
 第一次開會用預設路徑 `~/Documents/Obsidian Vault/每日工作日誌`。
@@ -53,6 +124,8 @@ cargo tauri icon /tmp/icon.png          # 會蓋掉 src-tauri/icons/
 
 設定、TODO、待寫回的變更都存在 `~/Library/Application Support/tw.npust.worklog-app/`，
 不會寫進日誌資料夾。（例外只有日誌規則：那一區直接改 `~/.claude/CLAUDE.md`，改前會備份。）日誌資料夾裡唯一會被寫到的是「加到今日日誌」新增的那一行。
+
+設定頁最下面是「版本與更新」：目前版本、檢查更新、下載安裝新版，說明看〈發新版〉。
 
 設定頁下面還有一區「外部服務」，填 GitLab 與 Redmine 的位址與 token，
 填了之後點日誌裡的 MR／議題連結就會直接在 app 裡顯示內容（見下一節）。
@@ -289,6 +362,7 @@ src-tauri/src/
   store.rs         設定（含外部服務 token）、日誌規則（讀寫 ~/.claude/CLAUDE.md）、TODO、待寫回變更
   link.rs          連結解析與 Redmine／GitLab API、附圖代抓（解析與檢查規則有測試，不打網路）
   commands.rs      前端呼叫的指令（含 move_item / clear_pending / append_entry / fetch_link / fetch_image）
+  update.rs        線上更新（讀 GitHub Releases 的 latest.json、下載安裝；版本比較與錯誤翻譯有測試，不打網路）
 ```
 
 ## 視覺
@@ -314,7 +388,7 @@ macOS 行事曆（月檢視）風格，規範是設計稿的 `brand-spec.md`：
 
 ## 已知限制
 
-- app 沒有簽章與公證，只適合自己用
+- app 沒有簽章與公證，只適合自己用；線上更新也因此有可能被 macOS 擋掉，失敗時要自己去下載頁抓
 - 拖曳只在桌機有效；手機版寬度請用卡片上的下拉選單改狀態
 - 看板的「複製全部」用瀏覽器剪貼簿 API，沒有另外接系統剪貼簿
 - 工作項目沒有任務數（N/M 項），因為日誌檔裡本來就沒寫
