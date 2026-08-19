@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 
-/// 七個工作狀態。前六個走生命週期，`done` 是一次性工作，不進流程軌。
+/// 八個工作狀態。前七個走生命週期，`done` 是一次性工作，不進流程軌。
 /// `zh` 是日誌檔裡實際寫的中文標籤，`label` 是介面上顯示的英文。
 pub struct Status {
     pub id: &'static str,
@@ -23,6 +23,7 @@ pub const STATUSES: &[Status] = &[
     Status { id: "proposing", label: "Proposing", zh: "提案中", hint: "正在寫提案與規格，文件還沒齊",   lifecycle: true,  branch: false },
     Status { id: "parked",    label: "Parked",    zh: "暫存",   hint: "提案與規格都完成，刻意擱著等排程", lifecycle: true,  branch: true  },
     Status { id: "building",  label: "Building",  zh: "實作中", hint: "已開分支動工，程式碼正在寫",     lifecycle: true,  branch: true  },
+    Status { id: "testing",   label: "Testing",   zh: "測試中", hint: "已推上 staging／測試環境，等驗證", lifecycle: true,  branch: false },
     Status { id: "review",    label: "Review",    zh: "待合併", hint: "已開 MR，等審查與合併",          lifecycle: true,  branch: false },
     Status { id: "archived",  label: "Archived",  zh: "已歸檔", hint: "MR 已合併、規格已歸檔，這件事結束了", lifecycle: true, branch: false },
     Status { id: "done",      label: "Done",      zh: "完成",   hint: "不走生命週期的一次性工作",       lifecycle: false, branch: false },

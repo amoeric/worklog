@@ -648,6 +648,53 @@ mod tests {
         assert!(!items.iter().any(|i| i.id.starts_with("auto-")));
     }
 
+    // ---- 測試中：推上 staging／測試環境之後的狀態 ----
+
+    /// `測試中` 要解析得出 testing，而且要能把工作項目推到那一格
+    #[test]
+    fn testing_status_is_parsed_and_moves_the_item() {
+        let d1 = day_of(
+            "1150818",
+            "## project_a\n\n- `實作中` [deploy-preview：預覽環境部署](https://redmine.example.com/issues/40001)\n",
+        );
+        let d2 = day_of(
+            "1150819",
+            "## project_a\n\n- `測試中` [deploy-preview：推上 staging 等驗證](https://redmine.example.com/issues/40001)\n",
+        );
+        let mut days = vec![d1, d2];
+        let items = derive_items(&mut days);
+
+        assert_eq!(days[1].entries[0].status.as_deref(), Some("testing"));
+        assert_eq!(days[1].entries[0].item.as_deref(), Some("deploy-preview"));
+        let it = items.iter().find(|i| i.id == "deploy-preview").unwrap();
+        assert_eq!(it.status, "testing");
+        assert_eq!(it.since, "1150819");
+    }
+
+    /// 沒有 slug、也歸不到別人的 `測試中` 條目，一樣自己成為一支工作項目
+    #[test]
+    fn testing_entry_without_a_slug_becomes_its_own_item() {
+        let md = "## project_b\n\n- `測試中` [feat: 上傳路徑改由後台設定](http://gitlab.example.com/group/project_b/-/merge_requests/392)\n";
+        let mut days = vec![day_of("1150819", md)];
+        let items = derive_items(&mut days);
+
+        let id = days[0].entries[0].item.clone().expect("帶生命週期狀態就該歸戶");
+        assert!(id.starts_with("auto-"), "fallback id 格式不對：{}", id);
+        assert_eq!(items.iter().find(|i| i.id == id).unwrap().status, "testing");
+    }
+
+    /// 流程順序＝看板欄位順序：測試中夾在實作中與待合併中間
+    #[test]
+    fn testing_sits_between_building_and_review() {
+        let ids: Vec<&str> = crate::model::STATUSES.iter().map(|s| s.id).collect();
+        let pos = |id: &str| ids.iter().position(|x| *x == id).unwrap();
+        assert!(pos("building") < pos("testing"), "測試中要排在實作中後面");
+        assert!(pos("testing") < pos("review"), "測試中要排在待合併前面");
+        let st = crate::model::status_by_zh("測試中").expect("狀態表裡要有測試中");
+        assert_eq!(st.id, "testing");
+        assert!(st.lifecycle, "測試中要算生命週期狀態");
+    }
+
     #[test]
     fn only_seven_digit_filenames_count() {
         assert!(is_log_file("1150817.md"));

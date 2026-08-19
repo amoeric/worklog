@@ -1039,16 +1039,68 @@
   var UPDATE_TTL = 30 * 60 * 1000;      /* 半小時內不重複問 GitHub */
 
   /* 有新版就在深淺色按鈕左邊放一顆常駐徽章。
+     點一下就把整件事做完：下載 → 安裝 → 重開，中間的進度就顯示在這顆徽章上。
      用徽章而不是浮動通知：浮動的會自己淡掉，錯過就再也看不到。 */
+  var updatePending = null;      /* updater 回來的那包，按了才用 */
+  var updateBusy = false;
+
+  function updateBadgeHtml(text, busy) {
+    var icon = busy
+      ? '<svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"></path></svg>'
+      : '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V4M5 11l7-7 7 7"></path></svg>';
+    return '<button type="button" data-update-btn ' +
+      'class="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 leading-tight text-accent shadow-sm hover:bg-accentsoft disabled:opacity-70 dark:border-dline dark:bg-dsurface dark:text-daccent dark:hover:bg-daccentsoft"' +
+      (busy ? ' disabled' : '') + '>' + icon + escHtml(text) + '</button>';
+  }
+
   function renderUpdateBadge(version) {
     var slot = document.querySelector('[data-shell-update]');
     if (!slot) return;
     if (!version) { slot.innerHTML = ''; return; }
-    slot.innerHTML = '<a href="settings.html#update" title="到設定頁下載安裝" ' +
-      'class="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 leading-tight text-accent shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:text-daccent dark:hover:bg-daccentsoft">' +
-        '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V4M5 11l7-7 7 7"></path></svg>' +
-        '新版 v' + escHtml(version) +
-      '</a>';
+    slot.innerHTML = updateBadgeHtml('新版 v' + version + '，點我更新', false);
+    var btn = slot.querySelector('[data-update-btn]');
+    if (btn) btn.addEventListener('click', runUpdate);
+  }
+
+  function updateBadgeState(text, busy) {
+    var slot = document.querySelector('[data-shell-update]');
+    if (!slot) return;
+    slot.innerHTML = updateBadgeHtml(text, busy);
+  }
+
+  /* 一路做到底：下載（帶進度）→ 安裝 → 重開。
+     用 updater 的 JS API，因為只有它給得到下載進度。 */
+  function runUpdate() {
+    if (updateBusy || !updatePending) return;
+    updateBusy = true;
+    var total = 0;
+    var got = 0;
+    updateBadgeState('下載中…', true);
+
+    updatePending.downloadAndInstall(function (ev) {
+      if (!ev) return;
+      if (ev.event === 'Started') {
+        total = (ev.data && ev.data.contentLength) || 0;
+      } else if (ev.event === 'Progress') {
+        got += (ev.data && ev.data.chunkLength) || 0;
+        updateBadgeState(total
+          ? '下載中 ' + Math.min(99, Math.round(got / total * 100)) + '%'
+          : '下載中…', true);
+      } else if (ev.event === 'Finished') {
+        updateBadgeState('安裝中…', true);
+      }
+    }).then(function () {
+      updateBadgeState('完成，重開中…', true);
+      var proc = window.__TAURI__ && window.__TAURI__.process;
+      if (proc && proc.relaunch) return proc.relaunch();
+    }).catch(function (e) {
+      updateBusy = false;
+      updateBadgeState('更新失敗，點我重試', false);
+      var slot = document.querySelector('[data-shell-update]');
+      var btn = slot && slot.querySelector('[data-update-btn]');
+      if (btn) btn.addEventListener('click', runUpdate);
+      toast('更新失敗：' + (e && e.message ? e.message : e), 'error');
+    });
   }
 
   function readUpdateCache() {
@@ -1065,21 +1117,23 @@
   }
 
   function autoCheckUpdate() {
-    if (!window.Log || !window.Log.checkUpdate) return;
+    var api = window.__TAURI__ && window.__TAURI__.updater;
+    if (!api || !api.check) return;
 
     /* 換頁時先把上次查到的結果畫回去，徽章才不會一頁有一頁沒有 */
     var cached = readUpdateCache();
-    if (cached && cached.version) renderUpdateBadge(cached.version);
-    if (cached && Date.now() - (cached.at || 0) < UPDATE_TTL) return;
+    var fresh = cached && Date.now() - (cached.at || 0) < UPDATE_TTL;
 
-    /* 開 app 的頭幾秒讓給讀日誌，晚一點再打網路 */
+    /* 開 app 的頭幾秒讓給讀日誌，晚一點再打網路。
+       就算快取還新也要重查一次，因為要拿到能安裝的那包（重整之後 updatePending 是空的）。 */
     setTimeout(function () {
-      window.Log.checkUpdate().then(function (info) {
-        var v = info && info.available ? info.version : null;
+      api.check().then(function (up) {
+        updatePending = up || null;
+        var v = up ? up.version : null;
         writeUpdateCache(v);
         renderUpdateBadge(v);
       }).catch(function () { /* 查不到就安靜略過，不要拿錯誤煩人 */ });
-    }, 2000);
+    }, fresh ? 2000 : 2000);
   }
 
   function mount() {

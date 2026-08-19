@@ -24,12 +24,13 @@ tailwind.config = {
         dline: '#333338',
         daccent: '#ff453a',
         daccentsoft: '#2c2c2e',
-        // 七個狀態＝七種行事曆：dot 實心圓點、tint 事件底色、dtint 深色版
+        // 八個狀態＝八種行事曆：dot 實心圓點、tint 事件底色、dtint 深色版
         st: {
           todo:      { dot: '#8e8e93', tint: '#e9e9eb', dtint: '#303034' },
           proposing: { dot: '#a057d8', tint: '#f0e3fa', dtint: '#332440' },
           parked:    { dot: '#f08c00', tint: '#ffeeda', dtint: '#3d2a10' },
           building:  { dot: '#2f7cf6', tint: '#dde9fd', dtint: '#16283f' },
+          testing:   { dot: '#30b0c7', tint: '#d9f1f6', dtint: '#12313a' },
           review:    { dot: '#e0a500', tint: '#fbf1cf', dtint: '#3a3113' },
           archived:  { dot: '#b0b0b6', tint: '#f2f2f4', dtint: '#232326' },
           done:      { dot: '#2aa84a', tint: '#dcf3e2', dtint: '#16321f' },

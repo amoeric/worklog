@@ -7,6 +7,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         // 線上更新：設定在 tauri.conf.json 的 plugins.updater
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             commands::load_settings,
             commands::save_settings,
