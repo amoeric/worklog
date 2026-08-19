@@ -991,6 +991,7 @@
           '<div class="order-last flex justify-center overflow-x-auto md:order-none">' + segmented(here) + '</div>' +
           '<div class="flex items-center justify-end gap-2">' +
             '<span data-shell-badge></span>' +
+            '<span data-shell-update></span>' +
             themeButton() +
           '</div>' +
         '</div>' +
@@ -1034,43 +1035,50 @@
      連不上、還沒有 Release 這種情況一律安靜略過：使用者沒有要求檢查，不該被錯誤打斷。
      真的有新版才浮一顆通知，按「更新」就到設定頁的「版本與更新」那一區，
      下載、安裝、失敗了怎麼辦都在那裡處理。 */
-  var UPDATE_FLAG = 'worklog:update-checked';
+  var UPDATE_CACHE = 'worklog:update';
+  var UPDATE_TTL = 30 * 60 * 1000;      /* 半小時內不重複問 GitHub */
 
-  function updateToast(version) {
-    toast('有新版 v' + version);
-    var box = document.querySelector('[data-toast]');
-    var item = box && box.lastElementChild;
-    if (!item) return;
+  /* 有新版就在深淺色按鈕左邊放一顆常駐徽章。
+     用徽章而不是浮動通知：浮動的會自己淡掉，錯過就再也看不到。 */
+  function renderUpdateBadge(version) {
+    var slot = document.querySelector('[data-shell-update]');
+    if (!slot) return;
+    if (!version) { slot.innerHTML = ''; return; }
+    slot.innerHTML = '<a href="settings.html#update" title="到設定頁下載安裝" ' +
+      'class="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 leading-tight text-accent shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:text-daccent dark:hover:bg-daccentsoft">' +
+        '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V4M5 11l7-7 7 7"></path></svg>' +
+        '新版 v' + escHtml(version) +
+      '</a>';
+  }
 
-    var btn = document.createElement('button');
-    btn.type = 'button';
-    btn.textContent = '更新';
-    btn.className = 'ml-3 shrink-0 rounded-full border border-line bg-surface px-3 py-0.5 leading-tight text-accent ' +
-      'hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:text-daccent dark:hover:bg-daccentsoft';
-    btn.addEventListener('click', function () { location.href = 'settings.html#update'; });
-    item.appendChild(btn);
+  function readUpdateCache() {
+    try {
+      var raw = sessionStorage.getItem(UPDATE_CACHE);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
 
-    /* 有動作可以按的通知，3.5 秒太短了，留久一點再淡掉 */
-    if (toastTimer) clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () {
-      item.style.opacity = '0';
-      setTimeout(function () { if (item.parentNode) item.parentNode.removeChild(item); }, 200);
-    }, 12000);
+  function writeUpdateCache(version) {
+    try {
+      sessionStorage.setItem(UPDATE_CACHE, JSON.stringify({ at: Date.now(), version: version || null }));
+    } catch (e) { /* 存不進去就每次重查，不影響功能 */ }
   }
 
   function autoCheckUpdate() {
     if (!window.Log || !window.Log.checkUpdate) return;
-    if (currentPage() === 'settings.html') return;   // 那一頁自己就有「版本與更新」
-    try {
-      if (sessionStorage.getItem(UPDATE_FLAG)) return;
-      sessionStorage.setItem(UPDATE_FLAG, '1');
-    } catch (e) { return; }
+
+    /* 換頁時先把上次查到的結果畫回去，徽章才不會一頁有一頁沒有 */
+    var cached = readUpdateCache();
+    if (cached && cached.version) renderUpdateBadge(cached.version);
+    if (cached && Date.now() - (cached.at || 0) < UPDATE_TTL) return;
 
     /* 開 app 的頭幾秒讓給讀日誌，晚一點再打網路 */
     setTimeout(function () {
       window.Log.checkUpdate().then(function (info) {
-        if (info && info.available) updateToast(info.version);
-      }).catch(function () { /* 安靜略過 */ });
+        var v = info && info.available ? info.version : null;
+        writeUpdateCache(v);
+        renderUpdateBadge(v);
+      }).catch(function () { /* 查不到就安靜略過，不要拿錯誤煩人 */ });
     }, 2000);
   }
 
