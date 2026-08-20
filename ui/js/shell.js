@@ -1034,18 +1034,25 @@
 
   function updateBadgeHtml(text, busy) {
     var icon = busy
-      ? '<svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"></path></svg>'
-      : '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20V4M5 11l7-7 7 7"></path></svg>';
+      ? '<svg class="h-4 w-4 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"></path></svg>'
+      : '<svg class="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M4 20h16"></path></svg>';
+
+    /* 有新版是好消息，用綠的；下載中退成一般灰，不要一直搶眼 */
+    var tone = busy
+      ? 'border-line bg-surface text-muted dark:border-dline dark:bg-dsurface dark:text-dmuted'
+      : 'border-st-done-dot/45 bg-st-done-tint/60 text-st-done-dot hover:bg-st-done-tint dark:border-st-done-dot/40 dark:bg-st-done-dtint dark:text-st-done-dot';
+
     return '<button type="button" data-update-btn ' +
-      'class="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-surface px-2.5 py-1 leading-tight text-accent shadow-sm hover:bg-accentsoft disabled:opacity-70 dark:border-dline dark:bg-dsurface dark:text-daccent dark:hover:bg-daccentsoft"' +
-      (busy ? ' disabled' : '') + '>' + icon + escHtml(text) + '</button>';
+      'class="flex shrink-0 items-center gap-2 rounded-lg border px-3 py-1.5 font-semibold leading-tight shadow-sm transition-colors ' +
+      (busy ? 'cursor-progress ' : '') + tone + '"' + (busy ? ' disabled' : '') + '>' +
+      icon + '<span>' + escHtml(text) + '</span></button>';
   }
 
   function renderUpdateBadge(version) {
     var slot = document.querySelector('[data-shell-update]');
     if (!slot) return;
     if (!version) { slot.innerHTML = ''; return; }
-    slot.innerHTML = updateBadgeHtml('新版 v' + version + '，點我更新', false);
+    slot.innerHTML = updateBadgeHtml('有新版 v' + version, false);
     var btn = slot.querySelector('[data-update-btn]');
     if (btn) btn.addEventListener('click', runUpdate);
   }
@@ -1083,7 +1090,7 @@
       if (proc && proc.relaunch) return proc.relaunch();
     }).catch(function (e) {
       updateBusy = false;
-      updateBadgeState('更新失敗，點我重試', false);
+      updateBadgeState('更新失敗，再試一次', false);
       var slot = document.querySelector('[data-shell-update]');
       var btn = slot && slot.querySelector('[data-update-btn]');
       if (btn) btn.addEventListener('click', runUpdate);
@@ -1104,24 +1111,32 @@
     } catch (e) { /* 存不進去就每次重查，不影響功能 */ }
   }
 
+  /* 查一次，結果直接反映在右上角那顆按鈕上。回傳新版版號（沒有就 null）。 */
+  function checkUpdateNow() {
+    var api = window.__TAURI__ && window.__TAURI__.updater;
+    if (!api || !api.check) return Promise.reject(new Error('不在 app 裡，沒得檢查'));
+    return api.check().then(function (up) {
+      updatePending = up || null;
+      var v = up ? up.version : null;
+      writeUpdateCache(v);
+      renderUpdateBadge(v);
+      return v;
+    });
+  }
+
   function autoCheckUpdate() {
     var api = window.__TAURI__ && window.__TAURI__.updater;
     if (!api || !api.check) return;
 
     /* 換頁時先把上次查到的結果畫回去，徽章才不會一頁有一頁沒有 */
     var cached = readUpdateCache();
-    var fresh = cached && Date.now() - (cached.at || 0) < UPDATE_TTL;
+    if (cached && cached.version) renderUpdateBadge(cached.version);
 
     /* 開 app 的頭幾秒讓給讀日誌，晚一點再打網路。
-       就算快取還新也要重查一次，因為要拿到能安裝的那包（重整之後 updatePending 是空的）。 */
+       就算快取還新也要重查，因為要拿到能安裝的那包（重整之後 updatePending 是空的）。 */
     setTimeout(function () {
-      api.check().then(function (up) {
-        updatePending = up || null;
-        var v = up ? up.version : null;
-        writeUpdateCache(v);
-        renderUpdateBadge(v);
-      }).catch(function () { /* 查不到就安靜略過，不要拿錯誤煩人 */ });
-    }, fresh ? 2000 : 2000);
+      checkUpdateNow().catch(function () { /* 查不到就安靜略過 */ });
+    }, 2000);
   }
 
   function mount() {
@@ -1150,6 +1165,7 @@
     renderMarkdown: MD.render,
     searchQuery: searchQuery,
     renderSearchResults: renderSearchResults,
+    checkUpdateNow: checkUpdateNow,
     setSearchQuery: setSearchQuery,
     withSearch: withSearch,
   };

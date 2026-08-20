@@ -139,43 +139,21 @@
 
       <section id="update" class="mt-6 rounded-xl border border-line bg-surface p-4 dark:border-dline dark:bg-dsurface" data-od-id="update-card">
         <h2 class="font-semibold tracking-tight">版本與更新</h2>
-        <p class="mt-1 text-muted dark:text-dmuted">
-          更新檔放在 GitHub Releases。按「檢查更新」會去問有沒有新版；有新版可以直接在這裡下載安裝，裝完會重開 app。
-          開 app 的時候也會自己在背景查一次，有新版才會浮出提示，查不到就安靜略過。
-        </p>
-        <p class="mt-1 text-muted dark:text-dmuted">
-          <strong class="font-normal text-accent dark:text-daccent">這個 app 是 ad-hoc 簽章、沒有 Apple 公證。</strong>
-          從網路下載回來的更新檔會被 macOS 標記，安裝有可能被擋下來或跳警告——不保證每次都裝得起來。
-          真的裝不起來，下面會寫出是哪一種問題，也可以按「開啟下載頁」自己抓回來換掉 app。
-        </p>
-
         <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
           <span class="text-muted dark:text-dmuted">目前版本</span>
-          <span id="update-current" class="font-mono">—</span>
-          <button id="update-check" class="shrink-0 rounded-full border border-line bg-surface px-3 py-2 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft">檢查更新</button>
-          <button id="update-page" class="shrink-0 rounded-full border border-line bg-surface px-3 py-2 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft">開啟下載頁</button>
-          <span id="update-state" class="rounded px-2 py-0.5 leading-tight"></span>
+          <span id="update-current" class="rounded bg-accentsoft px-2 py-0.5 font-mono dark:bg-daccentsoft">—</span>
+          <span id="update-state" class="text-muted dark:text-dmuted"></span>
         </div>
-
-        <div id="update-found" class="mt-3 hidden rounded-lg border border-line px-3 py-3 dark:border-dline">
-          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span id="update-version" class="font-semibold"></span>
-            <span id="update-date" class="text-muted dark:text-dmuted"></span>
-          </div>
-          <p id="update-notes" class="mt-2 whitespace-pre-wrap break-words"></p>
-          <p id="update-error" class="mt-2 hidden whitespace-pre-wrap break-words text-accent dark:text-daccent"></p>
-
-          <div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-            <button id="update-install" class="shrink-0 rounded-full bg-accent px-4 py-2 font-medium leading-tight text-white shadow-sm hover:opacity-90 dark:bg-daccent">下載並安裝</button>
-          </div>
-
-          <div id="update-progress" class="mt-3 hidden">
-            <div class="h-1.5 w-full overflow-hidden rounded-full bg-accentsoft dark:bg-daccentsoft">
-              <div id="update-bar" class="h-full w-0 rounded-full bg-accent transition-all dark:bg-daccent"></div>
-            </div>
-            <p id="update-progress-text" class="mt-1.5 text-muted dark:text-dmuted"></p>
-          </div>
+        <p class="mt-3 text-muted dark:text-dmuted">
+          開 app 時會自動查一次，有新版就在右上角出現按鈕，點下去會下載、安裝、重開。
+        </p>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+          <button id="update-check" class="shrink-0 rounded-lg border border-line bg-surface px-3 py-1.5 font-medium leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft">檢查更新</button>
+          <button id="update-page" class="shrink-0 rounded-lg border border-line bg-surface px-3 py-1.5 leading-tight text-muted shadow-sm hover:bg-accentsoft hover:text-ink dark:border-dline dark:bg-dsurface dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink">開啟下載頁</button>
         </div>
+        <p class="mt-3 text-muted dark:text-dmuted">
+          這個 app 沒有 Apple 公證，下載回來的更新檔有可能被 macOS 擋下來。裝不起來時右上角會寫原因，也可以按「開啟下載頁」自己抓。
+        </p>
       </section>
 
       <section class="mt-6" data-od-id="storage-card">
@@ -358,141 +336,34 @@ window.Log.ready(function () {
   });
 
   /* ---------- 版本與更新 ----------
-     後端接的是 Tauri 官方 updater，更新檔在 GitHub Releases。
-     這個 app 沒有 Apple 公證，更新有機會被 macOS 擋掉，所以失敗一定要講清楚原因，
-     並且留一條「自己去下載頁抓」的退路，不要讓使用者卡在這裡。 */
+     真正的下載安裝在右上角那顆按鈕上一次做完（`Shell.checkUpdateNow`），
+     這裡只負責顯示目前版本、手動觸發一次檢查、以及萬一裝不起來時的下載頁。 */
   var upCurrent = document.getElementById('update-current');
   var upState = document.getElementById('update-state');
-  var upFound = document.getElementById('update-found');
-  var upVersion = document.getElementById('update-version');
-  var upDate = document.getElementById('update-date');
-  var upNotes = document.getElementById('update-notes');
-  var upCheck = document.getElementById('update-check');
-  var upInstall = document.getElementById('update-install');
-  var upPage = document.getElementById('update-page');
-  var upProgress = document.getElementById('update-progress');
-  var upBar = document.getElementById('update-bar');
-  var upProgressText = document.getElementById('update-progress-text');
-  var upError = document.getElementById('update-error');
   var upPageUrl = '';
-  var upBusy = false;
-
-  function upNote(text, ok) {
-    upState.textContent = text;
-    upState.className = 'rounded px-2 py-0.5 leading-tight ' + L.statusClass(ok ? 'done' : 'parked');
-  }
-
-  function upSize(bytes) {
-    if (!bytes) return '';
-    return (bytes / 1048576).toFixed(1) + ' MB';
-  }
 
   L.appVersion().then(function (v) {
-    upCurrent.textContent = v && v.version ? 'v' + v.version : '（不明）';
+    upCurrent.textContent = 'v' + (v && v.version ? v.version : '?');
     upPageUrl = (v && v.page) || '';
+  }).catch(function () {
+    upCurrent.textContent = '（讀不到）';
   });
 
-  function paintUpdate(info) {
-    if (info.page) upPageUrl = info.page;
-    if (info.current) upCurrent.textContent = 'v' + info.current;
-    if (!info.available) {
-      upFound.classList.add('hidden');
-      upNote('已經是最新版', true);
-      return;
-    }
-    upVersion.textContent = '新版 v' + info.version;
-    upDate.textContent = info.date || '';
-    upNotes.textContent = info.notes || '（這個版本沒有寫更新說明）';
-    upFound.classList.remove('hidden');
-    upNote('有新版可以更新', true);
-  }
-
-  function checkUpdate() {
-    if (upBusy) return;
-    upBusy = true;
-    upCheck.disabled = true;
-    upError.classList.add('hidden');
-    upNote('檢查中…', true);
-    L.checkUpdate().then(paintUpdate).catch(function (e) {
-      upFound.classList.add('hidden');
-      upNote('檢查更新失敗：' + e, false);
-    }).then(function () {
-      upBusy = false;
-      upCheck.disabled = false;
-    });
-  }
-
-  upCheck.addEventListener('click', checkUpdate);
-
-  upPage.addEventListener('click', function () {
-    L.openExternal(upPageUrl);
-  });
-
-  upInstall.addEventListener('click', function () {
-    if (upBusy) return;
-    upBusy = true;
-    upInstall.disabled = true;
-    upCheck.disabled = true;
-    upProgress.classList.remove('hidden');
-    upError.classList.add('hidden');
-    upBar.style.width = '0%';
-    upProgressText.textContent = '準備下載…';
-    upNote('更新中，先別關掉 app', true);
-
-    var stop = null;
-    L.onUpdateProgress(function (p) {
-      if (p.done) {
-        upBar.style.width = '100%';
-        upProgressText.textContent = '下載完成，安裝中…';
-        return;
-      }
-      if (typeof p.percent === 'number') {
-        upBar.style.width = p.percent + '%';
-        upProgressText.textContent = '下載中 ' + p.percent + '%（' + upSize(p.downloaded) + ' / ' + upSize(p.total) + '）';
-      } else {
-        upProgressText.textContent = '下載中 ' + upSize(p.downloaded);
-      }
-    }).then(function (un) { stop = un; });
-
-    L.installUpdate().then(function () {
-      upBar.style.width = '100%';
-      upProgressText.textContent = '安裝完成，準備重新啟動…';
-      upNote('更新完成', true);
-      setTimeout(function () { L.restartApp(); }, 1200);
+  document.getElementById('update-check').addEventListener('click', function () {
+    upState.textContent = '檢查中…';
+    if (!window.Shell || !window.Shell.checkUpdateNow) { upState.textContent = '不在 app 裡，沒得檢查'; return; }
+    window.Shell.checkUpdateNow().then(function (version) {
+      upState.textContent = version ? '有新版 v' + version + '，右上角可以更新' : '已經是最新版';
     }).catch(function (e) {
-      upProgress.classList.add('hidden');
-      upNote('安裝失敗', false);
-      upError.textContent = '安裝失敗：' + e +
-        '\n這個 app 沒有 Apple 公證，下載回來的更新檔有可能被 macOS 擋住。' +
-        '可以按「開啟下載頁」自己抓新版，解壓縮之後換掉舊的 app。';
-      upError.classList.remove('hidden');
-      upBusy = false;
-      upInstall.disabled = false;
-      upCheck.disabled = false;
-    }).then(function () {
-      if (stop) stop();
+      upState.textContent = '檢查失敗：' + (e && e.message ? e.message : e);
     });
   });
 
-  /* 從通知按「更新」進來的（settings.html#update）：直接捲過去並查一次 */
-  if (location.hash === '#update') {
-    document.getElementById('update').scrollIntoView({ block: 'start' });
-    checkUpdate();
-  }
-
-  document.getElementById('btn-pick').addEventListener('click', function () {
-    L.pickFolder().then(function (p) { if (p) input.value = p; });
+  document.getElementById('update-page').addEventListener('click', function () {
+    if (upPageUrl) L.openExternal(upPageUrl);
   });
 
-  document.getElementById('btn-save').addEventListener('click', function () {
-    var folder = input.value.trim();
-    if (!folder) return;
-    L.saveSettings(folder).then(refresh);
-  });
 
-  document.getElementById('btn-reload').addEventListener('click', refresh);
-
-  paint();
 });
 </script>
 </body>

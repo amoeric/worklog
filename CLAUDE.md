@@ -48,6 +48,20 @@ cargo run --example probe -- ~/某個資料夾
 ```
 
 改前端（`ui/`）之後要重新編譯才會生效，因為前端是編進 binary 的。
+
+**裝到 `/Applications` 只有一種正確做法**：換掉裡面的執行檔，不要複製 `target/release/bundle/macos/*.app`——
+`cargo build --release` 只重編執行檔，**不會**更新那個打包好的 `.app`，複製過去等於裝了舊版
+（這個坑踩過：連續幾輪修改都沒生效，因為一直在裝幾小時前的 bundle）。
+
+```sh
+cargo build --release
+pkill -f 'worklog-app' || true
+cp target/release/worklog-app "/Applications/每日工作日誌.app/Contents/MacOS/worklog-app"
+codesign --force --deep --sign - "/Applications/每日工作日誌.app"
+```
+
+要重新產生整個 `.app`（換圖示、改版本、發 Release）才用 `cargo tauri build --bundles app`。
+驗證裝對了沒：比對 `shasum` 或看 `ls -l` 的時間，別靠感覺。
 安裝到 `/Applications` 的步驟看 `README.md` 的「打包與安裝」，
 **換掉 binary 之後一定要 `codesign --force --deep --sign -` 重簽，不然 app 打不開**。
 

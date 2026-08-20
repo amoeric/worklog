@@ -23,6 +23,18 @@
   [data-col="rail"].is-open [data-full] { display: flex; }
   /* 窄軌上的狀態名直著寫 */
   .rail-name { writing-mode: vertical-rl; }
+
+  /* WebKit 的老問題：光有 draggable="true" 在 WKWebView 裡拖不動，
+     要明講這個元素本身可以被拖。卡片裡的連結與按鈕則要關掉，
+     不然從標題按下去會變成拖那條連結，卡片反而不動。 */
+  [data-card] {
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;          /* 觸控板／觸控拖曳時不要被捲動搶走 */
+    cursor: grab;
+  }
+  [data-card]:active { cursor: grabbing; }
+  [data-card] a { cursor: pointer; }
 </style>
 </head>
 <body class="flex h-screen flex-col overflow-hidden bg-paper text-ink antialiased dark:bg-dpaper dark:text-dink font-sans text-base" data-od-id="board-page">
@@ -163,7 +175,7 @@ window.Log.ready(function () {
     var links = (item.issue ? linkTag(item.issue) : '') + (item.mr ? linkTag(item.mr) : '');
 
     return '' +
-      '<div draggable="true" data-card="' + item.id + '" data-od-id="card-' + item.id + '" ' +
+      '<div data-card="' + item.id + '" data-od-id="card-' + item.id + '" ' +
       'class="group relative cursor-grab ' + CARD + ' hover:border-muted active:cursor-grabbing dark:hover:border-dmuted">' +
         '<a href="work-item.html?id=' + item.id + (scope === 'day' && day ? '&d=' + day : '') + '" ' +
         'class="block pr-7 leading-snug underline-offset-4 hover:underline' + (dim ? ' text-muted dark:text-dmuted' : '') + '">' + esc(item.title) + '</a>' +
@@ -318,46 +330,127 @@ window.Log.ready(function () {
 
   var RING = ['ring-2', 'ring-inset', 'ring-accent', 'rounded-lg', 'dark:ring-daccent'];
 
+  /* ---------- 拖放 ----------
+     HTML5 的 draggable 在 WKWebView 裡按住完全沒反應，所以自己做。
+     起手式綁在卡片上，移動與放開一律綁在 document——滑鼠一離開卡片，
+     事件就不再送到那張卡（setPointerCapture 也擋不住），掛 document 才不會漏。
+     這幾支放在模組層級：wire() 每次 render 都重跑，但 document 監聽器只掛一次，
+     兩邊若在不同閉包裡就會失聯（卡片拖得動、放開卻沒反應）。 */
+  var drag = null;
+  var dragWired = false;
+
+  function boardCols() {
+    return document.getElementById('columns');
+  }
+
+  /* 用每一欄的實際範圍判斷游標落在哪裡。
+     不用 elementFromPoint：拖曳中畫面上有跟著游標的複本、欄位又會展開，
+     那個 API 在 WKWebView 裡不一定回我們要的元素。 */
+  function columnAt(x, y) {
+    var cols = boardCols();
+    if (!cols) return null;
+    var hit = null;
+    cols.querySelectorAll('[data-drop]').forEach(function (c) {
+      if (hit) return;
+      var r = c.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hit = c;
+    });
+    return hit;
+  }
+
+  function highlight(col) {
+    var cols = boardCols();
+    if (!cols) return;
+    cols.querySelectorAll('[data-drop]').forEach(function (c) {
+      var list = c.querySelector('[data-list]');
+      if (c === col) {
+        c.classList.add('is-open');
+        if (list) list.classList.add.apply(list.classList, RING);
+      } else {
+        c.classList.remove('is-open');
+        if (list) list.classList.remove.apply(list.classList, RING);
+      }
+    });
+  }
+
+  function endDrag() {
+    if (!drag) return;
+    if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
+    drag.card.classList.remove('opacity-40');
+    drag = null;
+    highlight(null);
+  }
+
+  function onDragMove(e) {
+    if (!drag) return;
+    var card = drag.card;
+
+    if (!drag.started) {
+      /* 手指／滑鼠只是抖一下不算拖 */
+      if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 6) return;
+      drag.started = true;
+      var r = card.getBoundingClientRect();
+      var ghost = card.cloneNode(true);
+      ghost.style.position = 'fixed';
+      ghost.style.left = r.left + 'px';
+      ghost.style.top = r.top + 'px';
+      ghost.style.width = r.width + 'px';
+      ghost.style.margin = '0';
+      ghost.style.pointerEvents = 'none';
+      ghost.style.zIndex = '60';
+      ghost.style.opacity = '0.95';
+      ghost.style.transform = 'rotate(1.5deg)';
+      ghost.style.boxShadow = '0 12px 32px rgba(0,0,0,0.18)';
+      document.body.appendChild(ghost);
+      drag.ghost = ghost;
+      drag.offX = drag.x - r.left;
+      drag.offY = drag.y - r.top;
+      card.classList.add('opacity-40');
+    }
+
+    if (e.cancelable) e.preventDefault();
+    drag.ghost.style.left = (e.clientX - drag.offX) + 'px';
+    drag.ghost.style.top = (e.clientY - drag.offY) + 'px';
+    highlight(columnAt(e.clientX, e.clientY));
+  }
+
+  function onDragUp(e) {
+    if (!drag) return;
+    var started = drag.started;
+    var id = drag.id;
+    var col = started ? columnAt(e.clientX, e.clientY) : null;
+    endDrag();
+    if (!started) return;                       /* 只是點一下 */
+    if (!col) { say('沒有放在任何一欄上，狀態沒變'); return; }
+    move(id, col.getAttribute('data-drop'));
+  }
+
+  function wireCardDrag(cols) {
+    cols.querySelectorAll('[data-card]').forEach(function (card) {
+      card.addEventListener('pointerdown', function (e) {
+        if (e.button !== 0) return;
+        /* 連結、按鈕、選單自己有事情要做，不要當成拖曳的起點 */
+        if (e.target.closest && e.target.closest('a, button, select, [data-menu]')) return;
+        closeMenus(null);
+        drag = { id: card.getAttribute('data-card'), card: card, x: e.clientX, y: e.clientY, started: false };
+      });
+    });
+
+    if (dragWired) return;
+    dragWired = true;
+    document.addEventListener('pointermove', onDragMove, { passive: false });
+    document.addEventListener('pointerup', onDragUp);
+    document.addEventListener('pointercancel', endDrag);
+    /* 有些環境只送 mouse 事件，補一條同樣的路 */
+    document.addEventListener('mousemove', function (e) { if (drag) onDragMove(e); }, { passive: false });
+    document.addEventListener('mouseup', function (e) { if (drag) onDragUp(e); });
+  }
+
   function wire() {
     var cols = document.getElementById('columns');
 
-    cols.querySelectorAll('[data-card]').forEach(function (el) {
-      el.addEventListener('dragstart', function (e) {
-        closeMenus(null);
-        e.dataTransfer.setData('text/plain', el.getAttribute('data-card'));
-        e.dataTransfer.effectAllowed = 'move';
-        el.classList.add('opacity-50');
-      });
-      el.addEventListener('dragend', function () {
-        el.classList.remove('opacity-50');
-        /* 拖到一半放棄的話，剛剛撐開的窄軌要收回去 */
-        cols.querySelectorAll('[data-col="rail"]').forEach(function (c) { c.classList.remove('is-open'); });
-      });
-    });
+    wireCardDrag(cols);
 
-    cols.querySelectorAll('[data-drop]').forEach(function (col) {
-      var list = col.querySelector('[data-list]');
-      col.addEventListener('dragover', function (e) {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        /* 窄軌先展開成正常寬度，不然沒地方放 */
-        col.classList.add('is-open');
-        list.classList.add.apply(list.classList, RING);
-      });
-      col.addEventListener('dragleave', function (e) {
-        /* 只是滑過欄裡面的子元素，不算離開 */
-        if (e.relatedTarget && col.contains(e.relatedTarget)) return;
-        col.classList.remove('is-open');
-        list.classList.remove.apply(list.classList, RING);
-      });
-      col.addEventListener('drop', function (e) {
-        e.preventDefault();
-        col.classList.remove('is-open');
-        list.classList.remove.apply(list.classList, RING);
-        var id = e.dataTransfer.getData('text/plain');
-        if (id) move(id, col.getAttribute('data-drop'));
-      });
-    });
 
     /* 觸控沒有拖曳，改狀態走卡片右上角的「移動到…」 */
     cols.querySelectorAll('[data-menu-btn]').forEach(function (btn) {
