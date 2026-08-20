@@ -200,10 +200,6 @@ window.Log.ready(function () {
     return '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass(id) + '">' + text + '</span>';
   }
 
-  function pendingChip() {
-    return '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass('parked') + '" title="還沒寫進 .md">未寫回</span>';
-  }
-
   /* showProject：跨日期看的時候，條目自己要標是哪個專案 */
   function rowHTML(e, idx, showProject) {
     var kind = L.detectKind(e.url);
@@ -211,7 +207,7 @@ window.Log.ready(function () {
     var head = showProject
       ? '<span class="w-24 shrink-0 truncate font-mono text-muted dark:text-dmuted" title="' + esc(e.project) + '">' + esc(e.project) + '</span>'
       : '<span class="h-2 w-2 shrink-0 rounded-full ' + (kind ? 'bg-accent dark:bg-daccent' : 'bg-muted dark:bg-dmuted') + '"></span>';
-    var tail = (e.pending ? pendingChip() : '') + statusChip(e.status);
+    var tail = statusChip(e.status);
 
     if (kind) {
       return '' +

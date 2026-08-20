@@ -251,17 +251,6 @@
       '</button>';
   }
 
-  /* 未寫回 .md 的變更數。資料是後端非同步送來的，先留空位，開機完再填。 */
-  function refreshBadge() {
-    var slot = document.querySelector('[data-shell-badge]');
-    if (!slot || !window.Log || !window.Log.pendingCount) return;
-    var n = window.Log.pendingCount();
-    slot.innerHTML = n
-      ? '<a href="board.html" class="shrink-0 rounded-full px-2.5 py-1 leading-tight ' +
-        window.Log.statusClass('parked') + '" title="這些變更還沒寫進 .md">未寫回 ' + n + '</a>'
-      : '';
-  }
-
   /* ---------- 連結面板 ----------
      MR 與議題先在 app 裡看內容（後端拿 token 打 API），面板下方才是「在瀏覽器開啟」。
      其餘連結維持原本行為，直接丟給系統瀏覽器。
@@ -990,7 +979,6 @@
           '</div>' +
           '<div class="order-last flex justify-center overflow-x-auto md:order-none">' + segmented(here) + '</div>' +
           '<div class="flex items-center justify-end gap-2">' +
-            '<span data-shell-badge></span>' +
             '<span data-shell-update></span>' +
             themeButton() +
           '</div>' +
@@ -1147,7 +1135,6 @@
     autoCheckUpdate();
     if (window.Log && window.Log.ready) {
       window.Log.ready(function () {
-        refreshBadge();
         banner();
         if (searchResultsOpen()) renderSearchResults();
       });
@@ -1158,7 +1145,6 @@
     mount: mount,
     topbar: topbar,
     themeButton: themeButton,
-    refreshBadge: refreshBadge,
     toast: toast,
     openLinkPanel: openLinkPanel,
     renderMarkdown: MD.render,

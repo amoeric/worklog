@@ -1,7 +1,8 @@
 /* 每日工作日誌 — 前端資料層
    資料全部來自 Rust 後端：它讀設定資料夾裡的 <民國7碼>.md，解析後一次送過來。
-   這個 app 對日誌檔幾乎只讀不寫：唯一會動到 .md 的是 appendEntry()，
-   而且只會往今天的檔案插一行，不改寫既有內容。TODO 存在 app 自己的設定目錄。
+   會動到 .md 的只有兩件事：TODO 的 appendEntry()（往今天的檔案插一行），
+   以及看板改狀態的 moveItem()（改今天那一行的狀態標籤，沒有就插一行）。
+   TODO 存在 app 自己的設定目錄。
 
    因為要等後端，每一頁的畫面程式都要包在 Log.ready(function () { ... }) 裡。 */
 (function () {
@@ -56,7 +57,7 @@
   }
 
   /* ---------- 後端送過來的資料 ---------- */
-  var WS = { folder: '', folder_exists: false, today: toCode(new Date()), days: [], items: [], projects: [], skipped: [], pending: [] };
+  var WS = { folder: '', folder_exists: false, today: toCode(new Date()), days: [], items: [], projects: [], skipped: [] };
   var STATUSES = [];
   var DAYS = {};          /* code -> entries */
   var TODOS = [];
@@ -334,39 +335,21 @@
     return it ? it.history.slice() : [];
   }
 
-  /* ---------- 待寫回的變更 ----------
-     看板上拖卡片不會動到 .md，只會記一筆變更，等使用者複製給 Claude 寫進當天的日誌。
-     後端已經把這些變更併進當天條目，所以狀態立刻就是新的。 */
-  function pendingEntries() {
-    return (WS.pending || []).slice();
-  }
-
-  function pendingCount() {
-    return (WS.pending || []).length;
-  }
-
   function setWorkspace(ws) {
     WS = ws;
     DAYS = {};
     (ws.days || []).forEach(function (d) { DAYS[d.code] = d.entries; });
   }
 
+  /* 看板改狀態：後端直接寫進今天的 <民國7碼>.md，寫完把重讀的結果一起送回來。
+     回傳的物件除了 workspace 還有 code / file / status_zh / updated / created / unchanged，
+     呼叫端拿去講「已寫進 1150820.md：測試中」。寫不了（沒設資料夾、沒權限…）會 reject。 */
   function moveItem(itemId, statusId) {
-    if (!invoke) return Promise.resolve();
-    return invoke('move_item', { itemId: itemId, statusId: statusId }).then(setWorkspace);
-  }
-
-  function clearPending() {
-    if (!invoke) return Promise.resolve();
-    return invoke('clear_pending').then(setWorkspace);
-  }
-
-  /* 一筆條目寫成日誌檔裡的那一行 */
-  function entryMarkdown(entry) {
-    var st = entry.status ? statusById(entry.status) : null;
-    var tag = st ? '`' + st.zh + '` ' : '';
-    var body = entry.url ? '[' + entry.title + '](' + entry.url + ')' : entry.title;
-    return '- ' + tag + body;
+    if (!invoke) return Promise.reject(new Error('不在 app 裡，寫不了日誌檔'));
+    return invoke('move_item', { itemId: itemId, statusId: statusId }).then(function (r) {
+      if (r && r.workspace) setWorkspace(r.workspace);
+      return r;
+    });
   }
 
   /* ---------- TODO：這個 app 唯一可寫的東西 ---------- */
@@ -610,11 +593,7 @@
     grouped: grouped,
     countOf: countOf,
     dayStatusCounts: dayStatusCounts,
-    pendingEntries: pendingEntries,
-    pendingCount: pendingCount,
-    clearPending: clearPending,
     moveItem: moveItem,
-    entryMarkdown: entryMarkdown,
     hasDay: hasDay,
     allCodes: allCodes,
     recentCodes: recentCodes,

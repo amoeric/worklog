@@ -3,6 +3,9 @@
 use worklog_app::commands;
 
 fn main() {
+    // 舊版的「待寫回」已經拿掉了，設定目錄裡若還有 pending.json 就收起來
+    worklog_app::store::retire_pending_file();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         // 線上更新：設定在 tauri.conf.json 的 plugins.updater
@@ -20,7 +23,6 @@ fn main() {
             commands::pick_folder,
             commands::load_workspace,
             commands::move_item,
-            commands::clear_pending,
             commands::status_table,
             commands::load_todos,
             commands::save_todos,

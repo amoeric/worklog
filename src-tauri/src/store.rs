@@ -1,15 +1,12 @@
 //! app 自己的檔案：設定與 TODO。
 //!
-//! 日誌資料夾是唯讀的，這裡寫的東西一律放在 app 自己的設定目錄，
-//! 不會碰到使用者的日誌檔。
+//! 這裡寫的東西一律放在 app 自己的設定目錄，不會碰到使用者的日誌檔
+//! （日誌檔只有 `commands.rs` 那幾個寫入函式會動）。
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-
-use crate::model::Entry;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -261,32 +258,21 @@ pub fn save_todos(list: &[Todo]) -> Result<()> {
     Ok(())
 }
 
-fn pending_path() -> Result<PathBuf> {
-    Ok(config_dir()?.join("pending.json"))
-}
-
-/// 還沒寫進 .md 的變更：日期（民國 7 碼）→ 那天要補的條目。
+/// 舊版留下來的 `pending.json`（那時候拖卡片只記變更、不寫檔）。
 ///
-/// 這個 app 不寫日誌檔，所以在看板上拖卡片只會產生這裡的一筆，
-/// 等使用者複製出去、請 Claude 寫進當天的 md。
-pub type PendingMap = BTreeMap<String, Vec<Entry>>;
-
-pub fn load_pending() -> PendingMap {
-    let path = match pending_path() {
-        Ok(p) => p,
-        Err(_) => return PendingMap::new(),
+/// 現在拖卡片是直接寫進當天的 md，這個檔已經沒有意義了，開 app 時改名成
+/// `pending.json.bak` 收起來——不刪掉是怕裡面還有沒寫進 md 的東西，
+/// 使用者要自己撈的話還撈得到。已經改過名就什麼都不做。
+pub fn retire_pending_file() {
+    let dir = match config_dir() {
+        Ok(d) => d,
+        Err(_) => return,
     };
-    match std::fs::read_to_string(&path) {
-        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
-        Err(_) => PendingMap::new(),
+    let path = dir.join("pending.json");
+    if !path.is_file() {
+        return;
     }
-}
-
-pub fn save_pending(map: &PendingMap) -> Result<()> {
-    let path = pending_path()?;
-    let text = serde_json::to_string_pretty(map)?;
-    std::fs::write(&path, text).with_context(|| format!("寫入失敗：{}", path.display()))?;
-    Ok(())
+    let _ = std::fs::rename(&path, dir.join("pending.json.bak"));
 }
 
 /// 讓設定頁可以直接顯示檔案放在哪

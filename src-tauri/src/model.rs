@@ -1,6 +1,6 @@
 //! 資料結構與狀態表。
 //!
-//! 日誌檔是唯讀來源：一天一個 `<民國7碼>.md`。
+//! 日誌檔一天一個 `<民國7碼>.md`。
 //! 工作項目（item）不是檔案裡直接寫的，是從條目推導出來的——
 //! 推導規則在 `parser.rs`，這裡只放型別。
 
@@ -79,9 +79,10 @@ pub struct Entry {
     pub item: Option<String>,
     /// 原始那一行，出問題時可以對照
     pub raw: String,
-    /// 在 app 裡拖出來、還沒寫進 .md 的變更
+    /// 這一行在檔案裡的行號（0 起算）。看板改狀態時靠它定位到「就是這一行」，
+    /// 不用字串比對整行去猜——一模一樣的行可能出現兩次。
     #[serde(default)]
-    pub pending: bool,
+    pub line: usize,
 }
 
 /// 一天。
@@ -101,8 +102,6 @@ pub struct HistoryPoint {
     pub title: String,
     pub url: Option<String>,
     pub project: String,
-    /// 這一筆還沒寫回 .md
-    pub pending: bool,
 }
 
 /// 推導出來的工作項目。
@@ -131,13 +130,4 @@ pub struct Workspace {
     pub projects: Vec<String>,
     /// 解析時看不懂的行，連同檔名一起回報，不吞掉
     pub skipped: Vec<String>,
-    /// 還沒寫進 .md 的變更，依日期排好
-    pub pending: Vec<PendingPoint>,
-}
-
-/// 一筆待寫回的變更，前端要能直接印出那一行 markdown。
-#[derive(Debug, Clone, Serialize)]
-pub struct PendingPoint {
-    pub code: String,
-    pub entry: Entry,
 }

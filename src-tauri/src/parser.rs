@@ -82,7 +82,7 @@ pub fn parse_file(text: &str) -> (Vec<Entry>, Vec<String>) {
     let mut entries: Vec<Entry> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
 
-    for line in text.lines() {
+    for (no, line) in text.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
@@ -101,7 +101,7 @@ pub fn parse_file(text: &str) -> (Vec<Entry>, Vec<String>) {
             if indent >= 2 {
                 continue;
             }
-            entries.push(parse_entry(&project, body, line));
+            entries.push(parse_entry(&project, body, line, no));
             continue;
         }
         // 不是標題也不是條目：留著回報，不要默默吞掉
@@ -111,8 +111,8 @@ pub fn parse_file(text: &str) -> (Vec<Entry>, Vec<String>) {
     (entries, skipped)
 }
 
-/// 解析一條 bullet 的內容。
-fn parse_entry(project: &str, body: &str, raw: &str) -> Entry {
+/// 解析一條 bullet 的內容。`no` 是這一行在檔案裡的行號（0 起算）。
+fn parse_entry(project: &str, body: &str, raw: &str, no: usize) -> Entry {
     let (status, rest) = split_status(body);
     let (title, url, note) = split_link(rest);
     Entry {
@@ -123,7 +123,7 @@ fn parse_entry(project: &str, body: &str, raw: &str) -> Entry {
         note,
         item: None,
         raw: raw.trim().to_string(),
-        pending: false,
+        line: no,
     }
 }
 
@@ -255,7 +255,7 @@ fn strip_slug_prefix(title: &str, slug: &str) -> String {
 /// `完成` 不是生命週期狀態，所以一次性雜項不會走第 4 條、也就不會變成工作項目。
 /// 沒標狀態的條目一樣不歸戶，只會出現在當天的日誌裡。
 pub fn derive_items(days: &mut [Day]) -> Vec<Item> {
-    // 1. 標題直接帶 slug（待寫回的變更已經知道自己屬於誰，不要蓋掉）
+    // 1. 標題直接帶 slug
     for day in days.iter_mut() {
         for e in day.entries.iter_mut() {
             if e.item.is_none() {
@@ -348,7 +348,6 @@ fn build_items(days: &[Day]) -> Vec<Item> {
                 title: e.title.clone(),
                 url: e.url.clone(),
                 project: e.project.clone(),
-                pending: e.pending,
             });
             *projects
                 .entry(slug.clone())
@@ -450,6 +449,11 @@ pub fn project_list(days: &[Day]) -> Vec<String> {
 mod tests {
     use super::*;
 
+    fn day_of(code: &str, text: &str) -> Day {
+        let (entries, _) = parse_file(text);
+        Day { code: code.into(), file: format!("{}.md", code), entries }
+    }
+
     const SAMPLE: &str = r#"## project_a
 
 - `已歸檔` [feat: 每個對話都是自己的頁面，對話頁補上左側清單](http://gitlab.example.com/group/project_a/-/merge_requests/64)
@@ -525,39 +529,38 @@ mod tests {
         assert_eq!(it.since, "1150816");
     }
 
-    /// 看板拖出來的變更，標題裡沒有 slug，靠預先填好的 item 歸戶，並且要能改變狀態
+    /// 看板改狀態會往當天的 md 補一行 `slug：描述`，
+    /// 下次重讀時要靠 slug 歸到同一支，並且把狀態推過去
     #[test]
-    fn pending_entries_keep_their_item_and_move_the_status() {
+    fn a_line_written_by_the_board_moves_the_status() {
         let (entries, _) = parse_file(SAMPLE);
         let mut days = vec![Day { code: "1150817".into(), file: "1150817.md".into(), entries }];
-        days.push(Day {
-            code: "1150818".into(),
-            file: "1150818.md".into(),
-            entries: vec![Entry {
-                project: "project_a".into(),
-                status: Some("building".into()),
-                title: "實作中：對話紀錄搜尋".into(),
-                url: Some("https://redmine.example.com/issues/32979".into()),
-                note: None,
-                item: Some("search-message-history".into()),
-                raw: String::new(),
-                pending: true,
-            }],
-        });
+        days.push(day_of(
+            "1150818",
+            "## project_a\n\n- `實作中` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n",
+        ));
 
         let items = derive_items(&mut days);
         let it = items.iter().find(|i| i.id == "search-message-history").unwrap();
         assert_eq!(it.status, "building");
         assert_eq!(it.since, "1150818");
-        assert!(it.history.last().unwrap().pending);
+    }
+
+    /// 行號要對得上原始檔案：看板改狀態就是靠它定位，不是字串比對
+    #[test]
+    fn entries_remember_which_line_they_came_from() {
+        let md = "## project_a\n\n- `暫存` 甲\n\n## project_b\n\n- `暫存` 甲\n";
+        let (entries, _) = parse_file(md);
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].line, 2);
+        assert_eq!(entries[1].line, 6);
+        let lines: Vec<&str> = md.lines().collect();
+        for e in &entries {
+            assert_eq!(lines[e.line].trim(), e.raw, "行號指到別行去了");
+        }
     }
 
     // ---- 第 4 條：歸不到 slug、但帶生命週期狀態的條目自己成為工作項目 ----
-
-    fn day_of(code: &str, text: &str) -> Day {
-        let (entries, _) = parse_file(text);
-        Day { code: code.into(), file: format!("{}.md", code), entries }
-    }
 
     #[test]
     fn unassigned_lifecycle_entry_becomes_its_own_item() {

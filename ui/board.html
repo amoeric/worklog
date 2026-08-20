@@ -54,8 +54,6 @@
   <!-- 開著過濾的時候要看得出來 -->
   <div id="filter-bar" class="hidden px-4 pb-3 md:px-6" data-od-id="filter-bar"></div>
 
-  <div id="pending-bar" class="hidden px-4 pb-3 md:px-6" data-od-id="pending-bar"></div>
-
   <div class="relative min-h-0 flex-1">
     <div id="board-scroll" class="h-full overflow-x-auto overflow-y-hidden px-4 pb-4 md:px-6">
       <div id="columns" class="flex h-full min-w-full gap-3" data-od-id="board-columns"></div>
@@ -267,7 +265,7 @@ window.Log.ready(function () {
           ? L.fileName(day) + ' 這天沒有符合關鍵字的項目'
           : L.fileName(day) + ' 這天沒有推進任何工作項目';
     } else {
-      note = '把卡片拖到別欄就改狀態';
+      note = '把卡片拖到別欄就改狀態，直接寫進今天的 md';
     }
     document.getElementById('scope-note').textContent = note;
   }
@@ -287,32 +285,23 @@ window.Log.ready(function () {
     });
   }
 
-  function renderPending() {
-    var bar = document.getElementById('pending-bar');
-    var list = L.pendingEntries();
-    if (!list.length) { bar.classList.add('hidden'); bar.innerHTML = ''; return; }
-    bar.classList.remove('hidden');
-    bar.innerHTML = '' +
-      '<div class="rounded-xl border border-line p-3 dark:border-dline ' + L.groupClass('parked') + '">' +
-        '<div class="flex flex-wrap items-center gap-2">' +
-          '<span class="shrink-0 rounded-full px-2.5 py-0.5 font-medium leading-tight ' + L.statusClass('parked') + '">未寫回 ' + list.length + '</span>' +
-          '<span class="min-w-0 flex-1 truncate text-muted dark:text-dmuted">這些變更還沒進 ' + L.fileName(L.today()) + '，複製後請 Claude 寫進去</span>' +
-          '<button id="copy-pending" class="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft">複製全部</button>' +
-          '<button id="clear-pending" class="shrink-0 rounded-full px-3 py-1.5 leading-tight text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink">丟掉</button>' +
-        '</div>' +
-        '<div class="mt-2 space-y-1 font-mono text-muted dark:text-dmuted">' +
-          list.map(function (p) { return '<div class="truncate">' + esc(L.entryMarkdown(p.entry)) + '</div>'; }).join('') +
-        '</div>' +
-      '</div>';
+  /* 改狀態：後端直接寫進今天的 md。
+     寫成功就講一聲寫到哪個檔；失敗要說原因，並且重畫一次，
+     讓畫面回到跟檔案一致的狀態（卡片退回原本的欄位）。 */
+  function move(itemId, statusId) {
+    L.moveItem(itemId, statusId).then(function (r) {
+      render();
+      if (!r || r.unchanged) return;
+      var how = r.updated ? '已寫進 ' : (r.created ? '已建立 ' : '已寫進 ');
+      say(how + r.file + '：' + r.status_zh);
+    }).catch(function (e) {
+      render();
+      say(String((e && e.message) || e || '寫不進日誌檔'), 'error');
+    });
+  }
 
-    document.getElementById('copy-pending').addEventListener('click', function () {
-      var text = list.map(function (p) { return L.entryMarkdown(p.entry); }).join('\n');
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text);
-      this.textContent = '已複製';
-    });
-    document.getElementById('clear-pending').addEventListener('click', function () {
-      L.clearPending().then(render);
-    });
+  function say(msg, kind) {
+    if (window.Shell && window.Shell.toast) window.Shell.toast(msg, kind);
   }
 
   /* 卡片上的移動選單一次只開一個，點別的地方就收起來 */
@@ -366,7 +355,7 @@ window.Log.ready(function () {
         col.classList.remove('is-open');
         list.classList.remove.apply(list.classList, RING);
         var id = e.dataTransfer.getData('text/plain');
-        if (id) L.moveItem(id, col.getAttribute('data-drop')).then(render);
+        if (id) move(id, col.getAttribute('data-drop'));
       });
     });
 
@@ -400,7 +389,7 @@ window.Log.ready(function () {
         var host = b.closest('[data-card]');
         if (!host) return;
         closeMenus(null);
-        L.moveItem(host.getAttribute('data-card'), b.getAttribute('data-move-to')).then(render);
+        move(host.getAttribute('data-card'), b.getAttribute('data-move-to'));
       });
     });
   }
@@ -553,9 +542,7 @@ window.Log.ready(function () {
     document.getElementById('board-count').textContent = items.length + ' 件';
     renderFilter(items.length);
     renderScope();
-    renderPending();
     wire();
-    if (window.Shell && window.Shell.refreshBadge) window.Shell.refreshBadge();
     updateEdges();
     if (!calPop.classList.contains('hidden')) renderCal();
     var url = scope === 'day' && day ? 'board.html?d=' + day : 'board.html';
