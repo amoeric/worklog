@@ -57,10 +57,13 @@ cargo tauri icon /tmp/icon.png          # 會蓋掉 src-tauri/icons/
 
 ```sh
 cd src-tauri
-TAURI_SIGNING_PRIVATE_KEY_PATH=~/.tauri/worklog.key \
-TAURI_SIGNING_PRIVATE_KEY_PASSWORD= \
+TAURI_SIGNING_PRIVATE_KEY="$HOME/.tauri/worklog.key" \
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" \
 cargo tauri build
 ```
+
+變數名是 `TAURI_SIGNING_PRIVATE_KEY`（值可以是私鑰檔的路徑）。**不是 `..._PATH`**——
+名字寫錯的話 bundle 照樣產得出來，只是最後會說「找到公鑰但沒有私鑰」，`.sig` 不會生出來。
 
 3. 產出在 `src-tauri/target/release/bundle/macos/`：
    - `每日工作日誌.app.tar.gz` ← 更新檔
