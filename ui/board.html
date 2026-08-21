@@ -88,7 +88,17 @@ window.Log.ready(function () {
   var params = new URLSearchParams(location.search);
   var day = params.get('d');
   if (day && !/^\d{8}$/.test(day)) day = null;
-  var scope = day ? 'day' : 'all';
+
+  /* 一段期間：兩端都要是合法日期才算數 */
+  var from = params.get('from');
+  var to = params.get('to');
+  if (!/^\d{8}$/.test(from || '') || !/^\d{8}$/.test(to || '')) { from = null; to = null; }
+  if (from && to && from > to) { var swap = from; from = to; to = swap; }
+
+  /* 日曆上選區間時，按了第一下之後停在這裡等第二下 */
+  var picking = null;
+
+  var scope = from ? 'range' : day ? 'day' : 'all';
 
   /* 搜尋：關鍵字由工具列的搜尋框管，看板只負責過濾卡片。
      六欄一律留著，只是卡片變少、數字跟著變。 */
@@ -112,11 +122,31 @@ window.Log.ready(function () {
     return ids;
   }
 
+  /* 起訖之間（含兩端）有推進到的工作項目。日期是 8 碼數字，字串比大小就夠 */
+  function touchedBetween(a, b) {
+    var ids = {};
+    L.allCodes().forEach(function (code) {
+      if (code < a || code > b) return;
+      L.entriesOf(code).forEach(function (e) { if (e.item) ids[e.item] = true; });
+    });
+    return ids;
+  }
+
+  /* 目前看的是哪一段：單日也當成一段，其他地方就不用分兩種寫 */
+  function span() {
+    if (scope === 'day' && day) return { from: day, to: day };
+    if (scope === 'range' && from && to) return { from: from, to: to };
+    return null;
+  }
+
   function visibleItems() {
     var all = L.allItems();
     if (scope === 'day' && day) {
       var ids = touchedOn(day);
       all = all.filter(function (it) { return ids[it.id]; });
+    } else if (scope === 'range' && from && to) {
+      var inRange = touchedBetween(from, to);
+      all = all.filter(function (it) { return inRange[it.id]; });
     }
     return all.filter(function (it) { return L.matchesSearch(L.itemSearchFields(it), query); });
   }
@@ -258,6 +288,7 @@ window.Log.ready(function () {
     var tabs = [
       { id: 'all', label: '全部項目' },
       { id: 'day', label: '某一天' },
+      { id: 'range', label: '一段期間' },
     ];
     document.getElementById('scope').innerHTML = tabs.map(function (tb) {
       var on = tb.id === scope;
@@ -268,11 +299,20 @@ window.Log.ready(function () {
     }).join('');
 
     document.getElementById('scope').querySelectorAll('[data-scope]').forEach(function (b) {
-      b.addEventListener('click', function () {
+      b.addEventListener('click', function (e) {
+        /* 這一下不要傳到 document——那邊有「點日曆外面就收起來」，
+           會把下面剛打開的日曆立刻關掉 */
+        e.stopPropagation();
         scope = b.getAttribute('data-scope');
         /* 沒指定過日期就先挑最近有紀錄的那天，不然按了什麼都沒有 */
         if (scope === 'day' && !day) day = L.latestCode();
-        closeCal();
+        /* 第一次切到「一段期間」就先給最近七天，再讓使用者用日曆改 */
+        if (scope === 'range' && !(from && to)) {
+          to = day || L.latestCode();
+          from = L.shift(to, -6);
+        }
+        picking = null;
+        if (scope === 'range') openCal(); else closeCal();
         render();
       });
     });
@@ -281,19 +321,32 @@ window.Log.ready(function () {
        但不能整組藏起來——那會讓後面的東西左右跳，所以留在原地停用就好。 */
     var nav = document.getElementById('day-nav');
     var onDay = scope === 'day';
-    nav.classList.toggle('opacity-40', !onDay);
-    nav.classList.toggle('pointer-events-none', !onDay);
-    nav.setAttribute('aria-hidden', onDay ? 'false' : 'true');
-    nav.querySelectorAll('button').forEach(function (b) { b.disabled = !onDay; });
-    if (!onDay) closeCal();
+    var usable = onDay || scope === 'range';
+    nav.classList.toggle('opacity-40', !usable);
+    nav.classList.toggle('pointer-events-none', !usable);
+    nav.setAttribute('aria-hidden', usable ? 'false' : 'true');
+    /* 前後一天與「今天」只有看單日時說得通，日曆按鈕兩種都要能按 */
+    nav.querySelectorAll('button').forEach(function (b) {
+      b.disabled = b.id === 'btn-cal' ? !usable : !onDay;
+    });
+    if (!usable) closeCal();
 
     var note;
+    var sp = span();
     if (scope === 'day' && day) {
       note = visibleItems().length
         ? '只看 ' + L.fileName(day) + ' 有推進的項目'
         : filtering()
           ? L.fileName(day) + ' 這天沒有符合關鍵字的項目'
           : L.fileName(day) + ' 這天沒有推進任何工作項目';
+    } else if (scope === 'range' && sp) {
+      note = picking
+        ? '再點一天決定結束日'
+        : visibleItems().length
+          ? '只看這段期間有推進的項目'
+          : filtering()
+            ? '這段期間沒有符合關鍵字的項目'
+            : '這段期間沒有推進任何工作項目';
     } else {
       note = '把卡片拖到別欄就改狀態，直接寫進今天的 md';
     }
@@ -569,19 +622,28 @@ window.Log.ready(function () {
     var days = new Date(year, calMonth.month, 0).getDate();
     var lead = new Date(year, calMonth.month - 1, 1).getDay();
 
+    var onRange = scope === 'range';
+    var a = picking || (onRange ? from : null);
+    var b = picking ? null : (onRange ? to : null);
+
     var cells = '';
     for (var i = 0; i < lead; i++) cells += '<span></span>';
     for (var d = 1; d <= days; d++) {
       var code = String(calMonth.year) + L.pad(calMonth.month, 2) + L.pad(d, 2);
       var n = L.countOf(code);
-      var isCur = code === cur;
-      var cls = isCur
+      var isEnd = onRange && (code === a || code === b);
+      var inside = onRange && a && b && code > a && code < b;
+      var isCur = !onRange && code === cur;
+      var cls = isEnd || isCur
         ? 'bg-accent font-semibold text-white dark:bg-daccent'
-        : n > 0
-          ? 'font-medium text-ink hover:bg-accentsoft dark:text-dink dark:hover:bg-daccentsoft'
-          : 'text-muted hover:bg-accentsoft dark:text-dmuted dark:hover:bg-daccentsoft';
+        : inside
+          ? 'bg-accentsoft font-medium text-ink dark:bg-daccentsoft dark:text-dink'
+          : n > 0
+            ? 'font-medium text-ink hover:bg-accentsoft dark:text-dink dark:hover:bg-daccentsoft'
+            : 'text-muted hover:bg-accentsoft dark:text-dmuted dark:hover:bg-daccentsoft';
+      var dot = n > 0 && !isEnd && !isCur;
       cells += '<button data-pick="' + code + '" class="relative grid h-9 place-items-center rounded-full tabular-nums ' + cls + '">' + d +
-        (n > 0 && !isCur ? '<span class="absolute bottom-1 h-1 w-1 rounded-full bg-accent dark:bg-daccent"></span>' : '') +
+        (dot ? '<span class="absolute bottom-1 h-1 w-1 rounded-full bg-accent dark:bg-daccent"></span>' : '') +
         '</button>';
     }
 
@@ -595,7 +657,11 @@ window.Log.ready(function () {
         L.WEEKDAYS.map(function (w) { return '<span class="py-1">' + w + '</span>'; }).join('') +
       '</div>' +
       '<div class="grid grid-cols-7 gap-0.5">' + cells + '</div>' +
-      '<p class="mt-2 text-muted dark:text-dmuted">有點的日子表示那天有日誌</p>';
+      '<p class="mt-2 text-muted dark:text-dmuted">' +
+        (scope === 'range'
+          ? (picking ? '再點一天決定結束日' : '點一天當起始日，再點一天當結束日')
+          : '有點的日子表示那天有日誌') +
+      '</p>';
 
     calPop.querySelectorAll('[data-cal]').forEach(function (b) {
       b.addEventListener('click', function (e) {
@@ -611,8 +677,7 @@ window.Log.ready(function () {
     calPop.querySelectorAll('[data-pick]').forEach(function (b) {
       b.addEventListener('click', function (e) {
         e.stopPropagation();
-        closeCal();
-        goDay(b.getAttribute('data-pick'));
+        pickDay(b.getAttribute('data-pick'));
       });
     });
   }
@@ -631,6 +696,26 @@ window.Log.ready(function () {
   function goDay(code) {
     day = code;
     scope = 'day';
+    render();
+  }
+
+  /* 日曆上點一天。看單日就直接跳過去；選區間要點兩下，第一下起、第二下訖。 */
+  function pickDay(code) {
+    if (scope !== 'range') {
+      closeCal();
+      goDay(code);
+      return;
+    }
+    if (!picking) {
+      picking = code;
+      render();
+      renderCal();
+      return;
+    }
+    from = picking <= code ? picking : code;
+    to = picking <= code ? code : picking;
+    picking = null;
+    closeCal();
     render();
   }
 
@@ -836,7 +921,8 @@ window.Log.ready(function () {
     var head = e.target.closest && e.target.closest('[data-open-status]');
     if (head) {
       var url = 'status.html?s=' + encodeURIComponent(head.getAttribute('data-open-status')) +
-        (scope === 'day' && day ? '&d=' + day : '');
+        (scope === 'day' && day ? '&d=' + day : '') +
+        (scope === 'range' && from && to ? '&from=' + from + '&to=' + to : '');
       if (window.Shell && window.Shell.withSearch) url = window.Shell.withSearch(url);
       location.href = url;
       return;
@@ -852,13 +938,23 @@ window.Log.ready(function () {
       return column(st, items.filter(function (it) { return it.status === st.id; }));
     }).join('') + addColumn();
 
-    /* 現在看的是哪一天，標題旁邊與麵包屑都要看得到 */
-    var where = scope === 'day' && day
-      ? L.fileName(day) + '　' + L.longLabel(day) + (day === L.today() ? '（今天）' : '')
-      : '全部工作項目';
+    /* 現在看的是哪一段，標題旁邊與麵包屑都要看得到 */
+    var sp2 = span();
+    var where, crumbText;
+    if (scope === 'day' && day) {
+      where = L.fileName(day) + '　' + L.longLabel(day) + (day === L.today() ? '（今天）' : '');
+      crumbText = '看板　' + L.fileName(day);
+    } else if (scope === 'range' && sp2) {
+      var n = L.daysBetween(sp2.from, sp2.to) + 1;
+      where = L.shortLabel(sp2.from) + ' – ' + L.shortLabel(sp2.to) + '　共 ' + n + ' 天';
+      crumbText = '看板　' + sp2.from + ' – ' + sp2.to;
+    } else {
+      where = '全部工作項目';
+      crumbText = '看板';
+    }
     document.getElementById('board-date').textContent = where;
     var crumb = document.querySelector('[data-od-id="crumb"]');
-    if (crumb) crumb.textContent = scope === 'day' && day ? '看板　' + L.fileName(day) : '看板';
+    if (crumb) crumb.textContent = crumbText;
 
     document.getElementById('board-count').textContent = items.length + ' 件';
     renderFilter(items.length);
@@ -866,7 +962,11 @@ window.Log.ready(function () {
     wire();
     updateEdges();
     if (!calPop.classList.contains('hidden')) renderCal();
-    var url = scope === 'day' && day ? 'board.html?d=' + day : 'board.html';
+    var url = scope === 'day' && day
+      ? 'board.html?d=' + day
+      : scope === 'range' && from && to
+        ? 'board.html?from=' + from + '&to=' + to
+        : 'board.html';
     if (window.Shell && window.Shell.withSearch) url = window.Shell.withSearch(url);
     try { history.replaceState(null, '', url); } catch (e) {}
   }

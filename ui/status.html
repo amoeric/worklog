@@ -49,10 +49,14 @@ window.Log.ready(function () {
     statusId = first ? first.id : '';
   }
 
-  /* 從「某一天」的看板點進來就只看那一天，跟看板的範圍對齊 */
+  /* 範圍跟看板對齊：某一天，或一段期間 */
   var day = params.get('d');
   if (day && !/^\d{8}$/.test(day)) day = null;
-  var scope = day ? 'day' : 'all';
+  var from = params.get('from');
+  var to = params.get('to');
+  if (!/^\d{8}$/.test(from || '') || !/^\d{8}$/.test(to || '')) { from = null; to = null; }
+  if (from && to && from > to) { var sw = from; from = to; to = sw; }
+  var scope = from ? 'range' : day ? 'day' : 'all';
   var query = (window.Shell && window.Shell.searchQuery && window.Shell.searchQuery()) || '';
 
   function esc(s) {
@@ -68,11 +72,23 @@ window.Log.ready(function () {
     return ids;
   }
 
+  function touchedBetween(a, b) {
+    var ids = {};
+    L.allCodes().forEach(function (code) {
+      if (code < a || code > b) return;
+      L.entriesOf(code).forEach(function (e) { if (e.item) ids[e.item] = true; });
+    });
+    return ids;
+  }
+
   function visibleItems() {
     var all = L.allItems().filter(function (it) { return it.status === statusId; });
     if (scope === 'day' && day) {
       var ids = touchedOn(day);
       all = all.filter(function (it) { return ids[it.id]; });
+    } else if (scope === 'range' && from && to) {
+      var inRange = touchedBetween(from, to);
+      all = all.filter(function (it) { return inRange[it.id]; });
     }
     all = all.filter(function (it) { return L.matchesSearch(L.itemSearchFields(it), query); });
     /* 最近進入這個狀態的排前面 */
@@ -108,23 +124,24 @@ window.Log.ready(function () {
       ? '沒有符合關鍵字的項目。'
       : scope === 'day'
         ? esc(L.fileName(day)) + ' 這天沒有推進到' + what + '的項目。'
-        : '目前沒有' + what + '的項目。';
+        : scope === 'range'
+          ? '這段期間沒有推進到' + what + '的項目。'
+          : '目前沒有' + what + '的項目。';
     return '<p class="px-1 py-6 text-muted dark:text-dmuted">' + why + '</p>';
   }
 
   /* 全部／某一天，跟看板同一組選項 */
   function renderScope() {
     var box = document.getElementById('scope');
-    var opts = [
-      { id: 'all', label: '全部項目' },
-      { id: 'day', label: day ? L.shortLabel(day) : '某一天' },
-    ];
+    var opts = [{ id: 'all', label: '全部項目' }];
+    if (day) opts.push({ id: 'day', label: L.shortLabel(day) });
+    if (from && to) opts.push({ id: 'range', label: L.shortLabel(from) + ' – ' + L.shortLabel(to) });
     box.innerHTML = opts.map(function (o) {
       var on = scope === o.id;
       var cls = on
         ? 'rounded-full bg-surface px-3 py-1 leading-tight shadow-sm dark:bg-dsurface'
         : 'rounded-full px-3 py-1 leading-tight text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink';
-      var off = o.id === 'day' && !day;
+      var off = false;
       return '<button data-scope="' + o.id + '" class="' + cls + (off ? ' opacity-40' : '') + '"' +
         (off ? ' disabled' : '') + '>' + esc(o.label) + '</button>';
     }).join('');
@@ -154,11 +171,15 @@ window.Log.ready(function () {
 
     renderScope();
 
-    var back = 'board.html' + (day ? '?d=' + day : '');
+    var back = scope === 'range' && from && to
+      ? 'board.html?from=' + from + '&to=' + to
+      : 'board.html' + (day ? '?d=' + day : '');
     document.getElementById('to-board').href =
       window.Shell && window.Shell.withSearch ? window.Shell.withSearch(back) : back;
 
-    var url = 'status.html?s=' + encodeURIComponent(statusId) + (scope === 'day' && day ? '&d=' + day : '');
+    var url = 'status.html?s=' + encodeURIComponent(statusId) +
+      (day ? '&d=' + day : '') +
+      (from && to ? '&from=' + from + '&to=' + to : '');
     if (window.Shell && window.Shell.withSearch) url = window.Shell.withSearch(url);
     try { history.replaceState(null, '', url); } catch (e) {}
   }
