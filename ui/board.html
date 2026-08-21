@@ -204,6 +204,13 @@ window.Log.ready(function () {
       '</button>';
   }
 
+  /* 點進別頁時把目前的範圍一起帶著，回來才回得到同一段 */
+  function backParams() {
+    if (scope === 'day' && day) return '&d=' + day;
+    if (scope === 'range' && from && to) return '&from=' + from + '&to=' + to;
+    return '';
+  }
+
   /* dim：已歸檔那欄整欄退到背景，標題文字也跟著變灰 */
   function card(item, dim) {
     var stay = (item.status === 'todo' || item.status === 'parked')
@@ -214,7 +221,7 @@ window.Log.ready(function () {
     return '' +
       '<div data-card="' + item.id + '" data-od-id="card-' + item.id + '" ' +
       'class="group relative cursor-grab ' + CARD + ' hover:border-muted active:cursor-grabbing dark:hover:border-dmuted">' +
-        '<a href="work-item.html?id=' + item.id + (scope === 'day' && day ? '&d=' + day : '') + '" ' +
+        '<a href="work-item.html?id=' + item.id + backParams() + '" ' +
         'class="block pr-7 leading-snug underline-offset-4 hover:underline' + (dim ? ' text-muted dark:text-dmuted' : '') + '">' + esc(item.title) + '</a>' +
         moveButton() +
         moveMenu(item) +

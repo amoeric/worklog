@@ -35,11 +35,15 @@ window.Log.ready(function () {
   var first = L.allItems()[0];
   var id = params.get('id') || (first ? first.id : '');
 
-  /* 從「某一天」的看板點進來，回去也要回到那一天 */
+  /* 從有範圍的看板點進來，回去也要回到同一段（某一天或一段期間） */
   var fromDay = params.get('d');
-  if (fromDay && /^\d{8}$/.test(fromDay)) {
-    document.getElementById('to-board').setAttribute('href', 'board.html?d=' + fromDay);
-  }
+  var rangeFrom = params.get('from');
+  var rangeTo = params.get('to');
+  var ok8 = function (v) { return /^\d{8}$/.test(v || ''); };
+  var back = ok8(rangeFrom) && ok8(rangeTo)
+    ? 'board.html?from=' + rangeFrom + '&to=' + rangeTo
+    : ok8(fromDay) ? 'board.html?d=' + fromDay : '';
+  if (back) document.getElementById('to-board').setAttribute('href', back);
 
   function esc(s) {
     return String(s).replace(/[&<>"']/g, function (c) {

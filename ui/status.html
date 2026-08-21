@@ -113,7 +113,10 @@ window.Log.ready(function () {
   }
 
   function rowHref(it) {
-    var url = 'work-item.html?id=' + encodeURIComponent(it.id) + (day ? '&d=' + day : '');
+    var url = 'work-item.html?id=' + encodeURIComponent(it.id) +
+      (scope === 'range' && from && to
+        ? '&from=' + from + '&to=' + to
+        : day ? '&d=' + day : '');
     return window.Shell && window.Shell.withSearch ? window.Shell.withSearch(url) : url;
   }
 
