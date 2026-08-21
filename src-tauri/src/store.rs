@@ -172,6 +172,44 @@ pub fn insert_status_into_rules(rules: &str, zh: &str, hint: &str, after_zh: &st
     text
 }
 
+/// 改一個既有狀態的名稱與說明：狀態表那一列換掉，生命週期那行與其他
+/// 反引號提到它的地方一起改名。純函式，只動提到 `old_zh` 的地方。
+pub fn rename_status_in_rules(rules: &str, old_zh: &str, new_zh: &str, hint: &str) -> String {
+    let arrow = " → ";
+    let old_tick = format!("`{}`", old_zh);
+    let new_tick = format!("`{}`", new_zh);
+    let mut out: Vec<String> = Vec::new();
+    for line in rules.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("| `") && row_label(trimmed).as_deref() == Some(old_zh) {
+            out.push(format!("| `{}` | {} |", new_zh, hint));
+            continue;
+        }
+        if trimmed.contains(arrow) && !trimmed.starts_with('|') {
+            let parts: Vec<String> = line
+                .split(arrow)
+                .map(|p| rename_flow_part(p, old_zh, new_zh))
+                .collect();
+            out.push(parts.join(arrow));
+            continue;
+        }
+        out.push(line.replace(&old_tick, &new_tick));
+    }
+    let mut text = out.join("\n");
+    if rules.ends_with('\n') {
+        text.push('\n');
+    }
+    text
+}
+
+/// 生命週期的一段可能是「暫存 或 實作中」這種，逐個詞比對，只換整個詞。
+fn rename_flow_part(part: &str, old_zh: &str, new_zh: &str) -> String {
+    part.split(' ')
+        .map(|w| if w == old_zh { new_zh } else { w })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// `| \`待辦\` | 只有議題… |` → `待辦`
 fn row_label(line: &str) -> Option<String> {
     let rest = line.strip_prefix("| `")?;
@@ -569,5 +607,24 @@ mod tests {
         for line in ["| 標籤 | 意思 |", "| --- | --- |", "| `已歸檔` | 結束了 |"] {
             assert!(out.contains(line), "原本的行不見了：{}", line);
         }
+    }
+
+    #[test]
+    fn rename_status_changes_row_flow_and_mentions() {
+        let rules = "流程：待辦 → 提案中 → 暫存 或 實作中 → 測試中\n\n| `待辦` | 只有議題 |\n| `測試中` | 等驗證 |\n\n- 推上去就移到 `測試中`；別的不動\n";
+        let out = rename_status_in_rules(rules, "測試中", "驗收中", "等對方驗");
+        assert!(out.contains("實作中 → 驗收中"));
+        assert!(out.contains("| `驗收中` | 等對方驗 |"));
+        assert!(out.contains("移到 `驗收中`；"));
+        assert!(!out.contains("測試中"));
+        assert!(out.contains("| `待辦` | 只有議題 |"));
+        assert!(out.ends_with('\n'));
+    }
+
+    #[test]
+    fn rename_status_only_whole_words_in_flow() {
+        let rules = "待辦 → 實作中 → 已歸檔\n| `實作中` | x |\n";
+        let out = rename_status_in_rules(rules, "實作", "開工", "y");
+        assert_eq!(out, rules);
     }
 }

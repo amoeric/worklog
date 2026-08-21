@@ -226,6 +226,11 @@ window.Log.ready(function () {
      自己加的狀態右邊多一個刪除鈕（內建八個沒有）。 */
   function columnHead(st, n) {
     var dim = st.id === 'archived' ? ' text-muted dark:text-dmuted' : '';
+    var edit =
+      '<button data-edit-status="' + st.id + '" title="改名稱或說明" aria-label="編輯狀態 ' + esc(st.zh) + '" ' +
+      'class="grid h-5 w-5 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-accentsoft hover:text-ink group-hover/col:opacity-100 dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink">' +
+        '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>' +
+      '</button>';
     var del = st.builtin ? '' :
       '<button data-del-status="' + st.id + '" title="刪掉這個狀態" aria-label="刪掉狀態 ' + esc(st.zh) + '" ' +
       'class="grid h-5 w-5 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-accentsoft hover:text-ink group-hover/col:opacity-100 dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink">' +
@@ -239,6 +244,7 @@ window.Log.ready(function () {
           '<span class="min-w-0 flex-1 truncate font-medium' + dim + '">' + esc(L.statusText(st.id)) + '</span>' +
           '<span class="shrink-0 tabular-nums text-muted dark:text-dmuted">' + n + '</span>' +
         '</button>' +
+        edit +
         del +
       '</div>';
   }
@@ -941,6 +947,50 @@ window.Log.ready(function () {
     });
   }
 
+  /* 改名稱／說明。按「儲存」就會一起改 ~/.claude/CLAUDE.md 的規則（後端先備份）。 */
+  function openEditStatus(id) {
+    var st = L.statusById(id);
+    if (!st) return;
+    var m = modal(
+      '<h2 class="' + TITLE + '">編輯狀態「' + esc(st.zh) + '」</h2>' +
+      '<p class="' + SUB + '">儲存後，日誌規則（<span class="font-mono">~/.claude/CLAUDE.md</span>）裡的這個狀態會一起改名，寫之前會先備份。</p>' +
+      '<p class="' + SUB + '">日誌檔不會動：已經寫成舊名稱的行留在原地，改名後 app 就不認得它們。</p>' +
+      '<label class="' + LABEL + '">名稱' +
+        '<input id="es-zh" class="' + FIELD + ' text-ink dark:text-dink" maxlength="8" value="' + esc(st.zh) + '">' +
+      '</label>' +
+      '<label class="' + LABEL + '">一句說明' +
+        '<input id="es-hint" class="' + FIELD + ' text-ink dark:text-dink" value="' + esc(st.hint || '') + '">' +
+      '</label>' +
+      '<p id="es-err" class="' + ERR + '"></p>' +
+      '<div class="' + FOOT + '">' +
+        '<button id="es-cancel" class="' + BTN + '">取消</button>' +
+        '<button id="es-go" class="' + BTN_GO + '">儲存</button>' +
+      '</div>'
+    );
+    var zhEl = m.el.querySelector('#es-zh');
+    var hintEl = m.el.querySelector('#es-hint');
+    var errEl = m.el.querySelector('#es-err');
+    var goBtn = m.el.querySelector('#es-go');
+    zhEl.focus(); zhEl.select();
+
+    function fail(msg) { errEl.textContent = msg; errEl.classList.remove('hidden'); goBtn.disabled = false; }
+    function go() {
+      var zh = zhEl.value.trim();
+      if (!zh) { fail('名稱不能空白'); return; }
+      goBtn.disabled = true;
+      L.updateStatus(id, zh, hintEl.value.trim()).then(function (r) {
+        m.close();
+        render();
+        say(r.rules_changed
+          ? '已更新狀態，規則也改好了' + (r.backup ? '（備份：' + r.backup + '）' : '')
+          : '已更新狀態');
+      }).catch(function (e) { fail(String((e && e.message) || e)); });
+    }
+    m.el.querySelector('#es-cancel').addEventListener('click', m.close);
+    goBtn.addEventListener('click', go);
+    m.el.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.isComposing) go(); });
+  }
+
   function askDeleteStatus(id) {
     var st = L.statusById(id);
     if (!st) return;
@@ -981,6 +1031,8 @@ window.Log.ready(function () {
       location.href = url;
       return;
     }
+    var ed = e.target.closest && e.target.closest('[data-edit-status]');
+    if (ed) { e.stopPropagation(); openEditStatus(ed.getAttribute('data-edit-status')); return; }
     var del = e.target.closest && e.target.closest('[data-del-status]');
     if (del) { e.stopPropagation(); askDeleteStatus(del.getAttribute('data-del-status')); }
   });

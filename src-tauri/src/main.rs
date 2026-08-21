@@ -29,6 +29,7 @@ fn main() {
             commands::status_table,
             commands::add_status,
             commands::delete_status,
+            commands::update_status,
             commands::rules_with_status,
             commands::load_todos,
             commands::save_todos,

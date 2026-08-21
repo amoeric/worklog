@@ -444,6 +444,61 @@ pub fn rules_with_status(zh: String, hint: String, after_zh: String) -> RulesDto
     }
 }
 
+#[derive(Serialize)]
+pub struct UpdateStatusResult {
+    pub table: Vec<StatusDto>,
+    /// 規則有沒有跟著改；沒裝規則就是 false
+    pub rules_changed: bool,
+    pub backup: Option<String>,
+}
+
+/// 改一個狀態的名稱與說明（內建的也可以改）。
+///
+/// 使用者按下「儲存」就會一併把 `~/.claude/CLAUDE.md` 裡的規則改名
+/// （狀態表那一列、生命週期那行、其他提到它的地方），寫之前先備份。
+/// 日誌檔一個字都不動——舊標籤的行會留在原地，改名後 app 就不認得它們。
+#[tauri::command]
+pub fn update_status(id: String, zh: String, hint: String) -> Result<UpdateStatusResult, String> {
+    let zh = zh.trim().to_string();
+    let hint = hint.trim().to_string();
+    if zh.is_empty() {
+        return Err("狀態名稱不能空白".into());
+    }
+    if zh.contains('`') {
+        return Err("狀態名稱不能有反引號（`），那是日誌檔裡的標籤符號".into());
+    }
+    let mut table = crate::model::status_table();
+    let at = table
+        .iter()
+        .position(|s| s.id == id)
+        .ok_or_else(|| format!("沒有這個狀態：{}", id))?;
+    if table.iter().any(|s| s.id != id && s.zh == zh) {
+        return Err(format!("已經有「{}」這個狀態了", zh));
+    }
+    let old_zh = table[at].zh.clone();
+    let old_hint = table[at].hint.clone();
+    if old_zh == zh && old_hint == hint {
+        return Ok(UpdateStatusResult { table, rules_changed: false, backup: None });
+    }
+    table[at].zh = zh.clone();
+    table[at].label = zh.clone();
+    table[at].hint = hint.clone();
+    store::save_statuses(&table).map_err(|e| e.to_string())?;
+    crate::model::set_table(table.clone());
+
+    let (text, present) = store::load_rules();
+    if !present {
+        return Ok(UpdateStatusResult { table, rules_changed: false, backup: None });
+    }
+    let next = store::rename_status_in_rules(&text, &old_zh, &zh, &hint);
+    if next == text {
+        return Ok(UpdateStatusResult { table, rules_changed: false, backup: None });
+    }
+    let stamp = format!("{}-{}", today_code(), Local::now().format("%H%M%S"));
+    let backup = store::save_rules(&next, &stamp).map_err(|e| e.to_string())?;
+    Ok(UpdateStatusResult { table, rules_changed: true, backup })
+}
+
 /// 刪掉一個自訂狀態。內建的八個刪不得。
 ///
 /// 日誌檔一個字都不動——已經寫成那個標籤的行留在原地，只是 app 之後不認得它。

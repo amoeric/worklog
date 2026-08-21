@@ -577,6 +577,15 @@
     });
   }
 
+  /* 改名稱／說明。後端會順手把 ~/.claude/CLAUDE.md 的規則一起改（先備份）。 */
+  function updateStatus(id, zh, hint) {
+    if (!invoke) return Promise.reject('不在 app 裡，沒辦法改狀態');
+    return invoke('update_status', { id: id, zh: zh, hint: hint }).then(function (r) {
+      setStatusTable(r.table);
+      return r;
+    });
+  }
+
   /* 把新狀態插進日誌規則後的完整規則本文。只是預覽，還沒寫檔。 */
   function rulesWithStatus(zh, hint, afterZh) {
     if (!invoke) return Promise.reject('不在 app 裡');
@@ -665,6 +674,7 @@
     statusDotClass: statusDotClass,
     addStatus: addStatus,
     deleteStatus: deleteStatus,
+    updateStatus: updateStatus,
     rulesWithStatus: rulesWithStatus,
     saveRules: saveRules,
     searchTerms: searchTerms,
