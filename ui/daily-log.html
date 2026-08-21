@@ -216,7 +216,7 @@ window.Log.ready(function () {
           head +
           '<span class="min-w-0 flex-1 truncate underline-offset-4 group-hover:underline">' + esc(e.title) + '</span>' +
           tail +
-          '<span class="shrink-0 rounded-full bg-accentsoft px-2 py-0.5 leading-tight text-muted group-hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:group-hover:text-dink">' + L.linkLabel(e.url) + '</span>' +
+          L.linkBadge(e.url) +
         '</a>';
     }
     return '' +

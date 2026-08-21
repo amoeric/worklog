@@ -139,7 +139,7 @@ window.Log.ready(function () {
         '<span class="min-w-0 flex-1 truncate ' + (t.done ? 'text-muted line-through dark:text-dmuted' : '') + '" title="' + esc(t.text) + '">' + esc(t.text) + '</span>' +
         (t.project ? '<span class="shrink-0 font-mono text-muted dark:text-dmuted">' + esc(t.project) + '</span>' : '') +
         statusChip(t.status) +
-        (kind ? '<a href="' + esc(t.url) + '" target="_blank" rel="noopener" class="shrink-0 rounded-full bg-accentsoft px-2 py-0.5 leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink">' + L.linkLabel(t.url) + '</a>' : '') +
+        (kind ? '<a href="' + esc(t.url) + '" target="_blank" rel="noopener" class="shrink-0 hover:opacity-80">' + L.linkBadge(t.url) + '</a>' : '') +
         '<span class="flex shrink-0 items-center gap-2">' +
           '<button data-edit="' + t.id + '" class="text-muted hover:text-accent dark:text-dmuted dark:hover:text-daccent" title="改文字、專案、網址、狀態">編輯</button>' +
           '<button data-append="' + t.id + '" class="rounded-full border border-line px-2.5 py-0.5 leading-tight shadow-sm hover:border-accent hover:text-accent disabled:opacity-50 dark:border-dline dark:hover:border-daccent dark:hover:text-daccent" title="把這一行寫進今天的 md">加到今日日誌</button>' +

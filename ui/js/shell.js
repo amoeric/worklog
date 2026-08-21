@@ -877,9 +877,9 @@
 
     var body = panelEl.querySelector('[data-panel-body]');
     var pill = panelEl.querySelector('[data-panel-kind]');
-    pill.className = 'shrink-0 rounded-full px-2.5 py-0.5 leading-tight ' +
+    pill.className = 'inline-flex shrink-0 items-center gap-1.5 rounded-full py-0.5 pl-0.5 pr-2.5 leading-tight ' +
       (window.Log ? window.Log.statusClass(kind === 'mr' ? 'review' : 'building') : '');
-    pill.textContent = window.Log ? window.Log.linkLabel(url) : '';
+    pill.innerHTML = window.Log ? window.Log.linkBadge(url) + '<span>' + window.Log.linkLabel(url).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }) + '</span>' : '';
     panelEl.querySelector('[data-panel-url]').textContent = url;
 
     var loading = document.createElement('p');

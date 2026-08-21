@@ -57,7 +57,7 @@ window.Log.ready(function () {
   }
 
   function linkTag(href, label) {
-    return '<a href="' + esc(href) + '" target="_blank" rel="noopener" class="shrink-0 rounded-full bg-accentsoft px-2.5 py-0.5 leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink">' + label + '</a>';
+    return '<a href="' + esc(href) + '" target="_blank" rel="noopener" class="shrink-0 hover:opacity-80">' + L.linkBadge(href) + '</a>';
   }
 
   function timeline(item) {

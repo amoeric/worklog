@@ -96,9 +96,7 @@ window.Log.ready(function () {
   }
 
   function linkTag(href) {
-    return '<a href="' + esc(href) + '" target="_blank" rel="noopener" title="' + esc(L.linkLabel(href)) + '" ' +
-      'class="inline-flex shrink-0 items-center rounded-full bg-accentsoft px-2 py-0.5 leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink">' +
-      esc(L.kindLabel(L.detectKind(href))) + '</a>';
+    return '<a href="' + esc(href) + '" target="_blank" rel="noopener" class="shrink-0 hover:opacity-80">' + L.linkBadge(href) + '</a>';
   }
 
   function row(it) {

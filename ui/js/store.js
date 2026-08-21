@@ -208,6 +208,32 @@
     return kindLabel(kind);
   }
 
+  /* 圓形來源圖示：GitLab 狐狸、Redmine 的 R。
+     圖示本身不帶字，完整名稱（GitLab MR／Redmine 議題）放 title，滑上去才看得到。
+     認不出來源的連結退回文字標籤。 */
+  var TANUKI = 'M23.6 9.6l-.03-.08-3.27-8.53a.85.85 0 0 0-.34-.4.87.87 0 0 0-1 .05.87.87 0 0 0-.29.44l-2.2 6.75H7.54L5.33 1.08a.86.86 0 0 0-.29-.44.87.87 0 0 0-1-.05.85.85 0 0 0-.34.4L.43 9.52.4 9.6a6.07 6.07 0 0 0 2.01 7.01l.01.01.03.02 4.98 3.73 2.46 1.86 1.5 1.13a1.01 1.01 0 0 0 1.22 0l1.5-1.13 2.46-1.86 5.01-3.75.01-.01a6.07 6.07 0 0 0 2.01-7.01z';
+  function linkBadge(url, extraClass) {
+    var src = linkSource(url);
+    var label = linkLabel(url);
+    var cls = 'inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full ring-1 ring-line dark:ring-dline ' + (extraClass || '');
+    var t = ' title="' + escapeHtml(label) + '" aria-label="' + escapeHtml(label) + '"';
+    if (src === 'gitlab') {
+      return '<span class="' + cls + ' bg-white"' + t + '>' +
+        '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24"><path fill="#FC6D26" d="' + TANUKI + '"/></svg></span>';
+    }
+    if (src === 'redmine') {
+      return '<span class="' + cls + ' bg-[#B2221F]"' + t + '>' +
+        '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24"><text x="12" y="17.5" text-anchor="middle" font-family="Georgia,serif" font-weight="700" font-size="16" fill="#fff">R</text></svg></span>';
+    }
+    return '<span class="shrink-0 rounded-full bg-accentsoft px-2 py-0.5 leading-tight text-muted dark:bg-daccentsoft dark:text-dmuted ' + (extraClass || '') + '"' + t + '>' + escapeHtml(label) + '</span>';
+  }
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
   function kindLabel(kind) {
     if (kind === 'mr') return 'MR';
     if (kind === 'issue') return '議題';
@@ -654,6 +680,7 @@
     kindLabel: kindLabel,
     linkSource: linkSource,
     linkLabel: linkLabel,
+    linkBadge: linkBadge,
     openExternal: openExternal,
     fetchLink: fetchLink,
     fetchImage: fetchImage,
