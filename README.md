@@ -92,7 +92,11 @@ cargo tauri build
 - `notes` 會原樣顯示在設定頁的「版本與更新」，寫給人看的中文就好
 - `platforms` 的 key 是「系統-架構」：Apple Silicon 是 `darwin-aarch64`，Intel 是 `darwin-x86_64`。
   兩種機器都要照顧就各打一份、各放一個 key；沒有對應的 key，那台機器會被告知「沒有這台機器的平台」
-- `url` 直接複製 Release 頁面上那顆檔案的連結最保險（檔名有中文的話 GitHub 會自己 percent-encode）
+- `url` **一定要照 Release 頁面上那顆檔案實際的名字寫**。GitHub 上傳時會把檔名裡的
+  非 ASCII 字元**整段拿掉**（不是 percent-encode）：`每日工作日誌.app.tar.gz` 上去之後
+  叫 `app.tar.gz`，`每日工作日誌_0.1.5_aarch64.dmg` 叫 `_0.1.5_aarch64.dmg`。
+  照原本的中文檔名去組網址會 404，而且 app 那邊只會說「下載失敗」，很難看出是這個原因。
+  發完用 `gh release view <tag> --json assets` 對一次名字，再 `curl -I` 那個網址確認是 200
 
 ### 私鑰
 
