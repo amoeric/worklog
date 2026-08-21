@@ -53,8 +53,6 @@
   <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-3 pt-4 md:px-6" data-od-id="board-toolbar">
     <h1 class="font-display shrink-0 text-3xl font-bold tracking-tightest md:text-4xl" data-od-id="board-title">看板</h1>
     <span id="board-date" class="shrink-0 self-end pb-1 text-muted dark:text-dmuted md:min-w-[21rem]" data-od-id="board-date"></span>
-    <div id="scope" class="flex shrink-0 items-center gap-0.5 rounded-full bg-accentsoft p-1 dark:bg-daccentsoft"></div>
-
     <div id="day-nav" class="relative flex shrink-0 items-center gap-1 rounded-full border border-line bg-surface p-1 shadow-sm transition-opacity dark:border-dline dark:bg-dsurface" data-od-id="board-day-nav">
       <button id="btn-prev-day" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="前一天"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
       <button id="btn-cal" class="rounded-full px-3 py-1 leading-tight text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-haspopup="dialog" aria-expanded="false">日曆</button>
@@ -274,51 +272,14 @@ window.Log.ready(function () {
   }
 
   function renderScope() {
-    var tabs = [
-      { id: 'all', label: '全部項目' },
-      { id: 'day', label: '某一天' },
-      { id: 'range', label: '一段期間' },
-    ];
-    document.getElementById('scope').innerHTML = tabs.map(function (tb) {
-      var on = tb.id === scope;
-      return '<button data-scope="' + tb.id + '" class="rounded-full px-3.5 py-1.5 leading-tight ' +
-        (on ? 'bg-surface font-semibold text-ink shadow-sm dark:bg-dline dark:text-dink'
-            : 'text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink') +
-        '">' + tb.label + '</button>';
-    }).join('');
-
-    document.getElementById('scope').querySelectorAll('[data-scope]').forEach(function (b) {
-      b.addEventListener('click', function (e) {
-        /* 這一下不要傳到 document——那邊有「點日曆外面就收起來」，
-           會把下面剛打開的日曆立刻關掉 */
-        e.stopPropagation();
-        scope = b.getAttribute('data-scope');
-        /* 沒指定過日期就先挑最近有紀錄的那天，不然按了什麼都沒有 */
-        if (scope === 'day' && !day) day = L.latestCode();
-        /* 第一次切到「一段期間」就先給最近七天，再讓使用者用日曆改 */
-        if (scope === 'range' && !(from && to)) {
-          to = day || L.latestCode();
-          from = L.shift(to, -6);
-        }
-        picking = null;
-        if (scope === 'range') openCal(); else closeCal();
-        render();
-      });
-    });
-
-    /* 換日那組只有看某一天時才有意義。
-       但不能整組藏起來——那會讓後面的東西左右跳，所以留在原地停用就好。 */
+    /* 範圍（全部／某一天／一段期間）都從日曆裡選。
+       前後一天只有看單日時說得通；「今天」與日曆隨時能按。 */
     var nav = document.getElementById('day-nav');
     var onDay = scope === 'day';
-    var usable = onDay || scope === 'range';
-    nav.classList.toggle('opacity-40', !usable);
-    nav.classList.toggle('pointer-events-none', !usable);
-    nav.setAttribute('aria-hidden', usable ? 'false' : 'true');
-    /* 前後一天與「今天」只有看單日時說得通，日曆按鈕兩種都要能按 */
     nav.querySelectorAll('button').forEach(function (b) {
-      b.disabled = b.id === 'btn-cal' ? !usable : !onDay;
+      b.disabled = (b.id === 'btn-prev-day' || b.id === 'btn-next-day') ? !onDay : false;
+      b.classList.toggle('opacity-40', b.disabled);
     });
-    if (!usable) closeCal();
 
     var note;
     var sp = span();
@@ -646,11 +607,39 @@ window.Log.ready(function () {
         L.WEEKDAYS.map(function (w) { return '<span class="py-1">' + w + '</span>'; }).join('') +
       '</div>' +
       '<div class="grid grid-cols-7 gap-0.5">' + cells + '</div>' +
+      '<div class="mt-3 flex items-center gap-1 rounded-full bg-accentsoft p-1 dark:bg-daccentsoft">' +
+        calTab('all', '全部', scope === 'all') +
+        calTab('range', '一段期間', onRange) +
+      '</div>' +
       '<p class="mt-2 text-muted dark:text-dmuted">' +
         (scope === 'range'
           ? (picking ? '再點一天決定結束日' : '點一天當起始日，再點一天當結束日')
-          : '有點的日子表示那天有日誌') +
+          : '點一天只看那天；有點的日子表示那天有日誌') +
       '</p>';
+
+    calPop.querySelectorAll('[data-scope]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var id = b.getAttribute('data-scope');
+        picking = null;
+        if (id === 'all') {
+          scope = 'all';
+          closeCal();
+        } else if (scope === 'range') {
+          /* 再按一次就退回看單日 */
+          scope = 'day';
+          if (!day) day = L.latestCode();
+        } else {
+          scope = 'range';
+          if (!(from && to)) {
+            to = day || L.latestCode();
+            from = L.shift(to, -6);
+          }
+          renderCal();
+        }
+        render();
+      });
+    });
 
     calPop.querySelectorAll('[data-cal]').forEach(function (b) {
       b.addEventListener('click', function (e) {
@@ -669,6 +658,13 @@ window.Log.ready(function () {
         pickDay(b.getAttribute('data-pick'));
       });
     });
+  }
+
+  function calTab(id, label, on) {
+    return '<button data-scope="' + id + '" class="flex-1 rounded-full px-3 py-1 leading-tight ' +
+      (on ? 'bg-surface font-semibold text-ink shadow-sm dark:bg-dline dark:text-dink'
+          : 'text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink') +
+      '">' + label + '</button>';
   }
 
   function openCal() {
