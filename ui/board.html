@@ -23,6 +23,14 @@
   [data-col="rail"].is-open [data-full] { display: flex; }
   /* 窄軌上的狀態名直著寫 */
   .rail-name { writing-mode: vertical-rl; }
+  /* 欄寬把手：平常看不見，滑上去或拖的時候變成一條線 */
+  [data-col="wide"] { position: relative; }
+  [data-col="wide"].is-sized { max-width: none; }
+  [data-resize] { position: absolute; top: 0; bottom: 0; right: -0.5rem; width: 1rem; cursor: col-resize; z-index: 5; }
+  [data-resize]::after { content: ""; position: absolute; top: 0.5rem; bottom: 0.5rem; left: 50%; width: 2px; margin-left: -1px; border-radius: 1px; background: currentColor; opacity: 0; transition: opacity .15s; }
+  [data-resize]:hover::after, [data-resize].is-dragging::after { opacity: .35; }
+  body.is-resizing { cursor: col-resize; user-select: none; }
+  body.is-resizing [data-col] { transition: none; }
 
   /* 小視窗進場：跟 macOS 一樣，淡入帶一點點放大，很快就停 */
   @keyframes sheet-in { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
@@ -266,9 +274,70 @@ window.Log.ready(function () {
 
     return '' +
       '<section data-drop="' + st.id + '" data-col="wide" data-od-id="column-' + st.id + '" ' +
-      'class="' + COL + L.groupClass(st.id) + '">' +
+      'class="' + COL + L.groupClass(st.id) + '"' + colWidthStyle(st.id) + '>' +
         columnBody(st, items) +
+        '<span data-resize="' + st.id + '" title="拖曳調整欄寬，點兩下還原"></span>' +
       '</section>';
+  }
+
+  /* ---------- 欄寬：拖右邊的把手改，記在 localStorage ---------- */
+  var WIDTH_KEY = 'board-col-widths';
+  var MIN_W = 176, MAX_W = 720;
+  function loadWidths() {
+    try { return JSON.parse(localStorage.getItem(WIDTH_KEY) || '{}') || {}; } catch (e) { return {}; }
+  }
+  function saveWidths(w) {
+    try { localStorage.setItem(WIDTH_KEY, JSON.stringify(w)); } catch (e) {}
+  }
+  var colWidths = loadWidths();
+  function colWidthStyle(id) {
+    var w = colWidths[id];
+    return w ? ' style="flex:0 0 ' + w + 'px;min-width:' + w + 'px"' : '';
+  }
+  function applyWidth(sec, w) {
+    sec.style.flex = '0 0 ' + w + 'px';
+    sec.style.minWidth = w + 'px';
+    sec.classList.add('is-sized');
+  }
+  function bindResize() {
+    document.querySelectorAll('[data-resize]').forEach(function (handle) {
+      var sec = handle.parentNode;
+      var id = handle.getAttribute('data-resize');
+      if (colWidths[id]) sec.classList.add('is-sized');
+      handle.addEventListener('dblclick', function (e) {
+        e.stopPropagation();
+        delete colWidths[id];
+        saveWidths(colWidths);
+        sec.style.flex = ''; sec.style.minWidth = '';
+        sec.classList.remove('is-sized');
+      });
+      handle.addEventListener('pointerdown', function (e) {
+        if (e.button !== 0) return;
+        e.preventDefault(); e.stopPropagation();
+        var startX = e.clientX;
+        var startW = sec.getBoundingClientRect().width;
+        handle.setPointerCapture(e.pointerId);
+        handle.classList.add('is-dragging');
+        document.body.classList.add('is-resizing');
+        var w = startW;
+        function move(ev) {
+          w = Math.max(MIN_W, Math.min(MAX_W, Math.round(startW + ev.clientX - startX)));
+          applyWidth(sec, w);
+        }
+        function up() {
+          handle.removeEventListener('pointermove', move);
+          handle.removeEventListener('pointerup', up);
+          handle.removeEventListener('pointercancel', up);
+          handle.classList.remove('is-dragging');
+          document.body.classList.remove('is-resizing');
+          colWidths[id] = w;
+          saveWidths(colWidths);
+        }
+        handle.addEventListener('pointermove', move);
+        handle.addEventListener('pointerup', up);
+        handle.addEventListener('pointercancel', up);
+      });
+    });
   }
 
   function renderScope() {
@@ -922,6 +991,7 @@ window.Log.ready(function () {
     document.getElementById('columns').innerHTML = L.statuses().map(function (st) {
       return column(st, items.filter(function (it) { return it.status === st.id; }));
     }).join('') + addColumn();
+    bindResize();
 
     /* 現在看的是哪一段，標題旁邊與麵包屑都要看得到 */
     var sp2 = span();
