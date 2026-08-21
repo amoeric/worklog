@@ -55,7 +55,7 @@ window.Log.ready(function () {
   var L = window.Log;
   var todayCode = L.today();
   var t = L.parts(todayCode);
-  var view = { roc: t.roc, month: t.month };
+  var view = { year: t.year, month: t.month };
 
   var grid = document.getElementById('grid');
   var gridClass = grid.className;          /* 引導卡模式會把格線整片拿掉，回來時原樣裝回去 */
@@ -252,13 +252,12 @@ window.Log.ready(function () {
   }
 
   function renderGuide() {
-    var year = view.roc + 1911;
+    var year = view.year;
     grid.className = '';           /* 格線整片不畫 */
     grid.innerHTML = guideCard();
     showCalendarChrome(false);
     document.getElementById('filter-bar').classList.add('hidden');
     document.getElementById('month-title').textContent = year + '年' + view.month + '月';
-    document.getElementById('month-sub').textContent = '民國' + view.roc + '年';
     document.getElementById('month-count').textContent = '';
     var crumb = document.querySelector('[data-od-id="crumb"]');
     if (crumb) crumb.textContent = year + '年' + view.month + '月';
@@ -269,7 +268,7 @@ window.Log.ready(function () {
     showCalendarChrome(true);
     grid.className = gridClass;
 
-    var year = view.roc + 1911;
+    var year = view.year;
     var first = new Date(year, view.month - 1, 1);
     var start = new Date(year, view.month - 1, 1 - first.getDay());
     var total = 0;
@@ -297,7 +296,6 @@ window.Log.ready(function () {
     });
 
     document.getElementById('month-title').textContent = year + '年' + view.month + '月';
-    document.getElementById('month-sub').textContent = '民國' + view.roc + '年';
     document.getElementById('month-count').textContent = total > 0
       ? recorded + ' 天有紀錄 · 共 ' + total + ' 筆'
       : filtering() ? '這個月沒有符合的條目' : '這個月沒有紀錄';
@@ -309,17 +307,17 @@ window.Log.ready(function () {
 
   function shiftMonth(delta) {
     var m = view.month + delta;
-    var y = view.roc;
+    var y = view.year;
     if (m < 1) { m = 12; y -= 1; }
     if (m > 12) { m = 1; y += 1; }
-    view = { roc: y, month: m };
+    view = { year: y, month: m };
     render();
   }
 
   document.getElementById('btn-prev').addEventListener('click', function () { shiftMonth(-1); });
   document.getElementById('btn-next').addEventListener('click', function () { shiftMonth(1); });
   document.getElementById('btn-this').addEventListener('click', function () {
-    view = { roc: t.roc, month: t.month };
+    view = { year: t.year, month: t.month };
     render();
   });
   document.addEventListener('keydown', function (e) {

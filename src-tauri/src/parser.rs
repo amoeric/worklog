@@ -1,4 +1,4 @@
-//! 把資料夾裡的 `<民國7碼>.md` 讀成結構化資料。
+//! 把資料夾裡的 `<西元年>/<月>/<西元8碼>.md` 讀成結構化資料。
 //!
 //! 檔案格式（來自 CLAUDE.md 的每日工作日誌規則）：
 //!
@@ -13,7 +13,7 @@
 //! 每行開頭的行內程式碼是狀態標籤；行內其他位置的反引號不算狀態。
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
 use regex::Regex;
@@ -30,50 +30,88 @@ static RE_ARCHIVE_SLUG: LazyLock<Regex> = LazyLock::new(|| {
 static RE_SLUG_PREFIX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^([a-z][a-z0-9_-]{2,})：").unwrap());
 
-/// `1150817.md`
+/// `20260817.md`（西元年月日 8 碼）
 fn is_log_file(name: &str) -> bool {
     let stem = match name.strip_suffix(".md") {
         Some(s) => s,
         None => return false,
     };
-    stem.len() == 7 && stem.chars().all(|c| c.is_ascii_digit())
+    stem.len() == 8 && stem.chars().all(|c| c.is_ascii_digit())
+}
+
+/// 日誌檔該放的位置：`<資料夾>/<西元年>/<月>/<西元8碼>.md`。
+///
+/// 寫檔跟讀檔都走這裡，路徑規則只有這一份。
+pub fn log_path(folder: &Path, code: &str) -> PathBuf {
+    if code.len() != 8 || !code.chars().all(|c| c.is_ascii_digit()) {
+        return folder.join(format!("{}.md", code));
+    }
+    folder
+        .join(&code[0..4])
+        .join(&code[4..6])
+        .join(format!("{}.md", code))
 }
 
 /// 掃資料夾，回傳依日期排好的每一天，以及看不懂而略過的行。
+///
+/// 日誌檔放在 `<年>/<月>/` 底下，所以要往下走；為了不誤入無關的深層目錄，
+/// 最多只走三層。
 pub fn scan(folder: &Path) -> (Vec<Day>, Vec<String>) {
     let mut days: Vec<Day> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
 
-    let read = match std::fs::read_dir(folder) {
+    scan_dir(folder, folder, 0, &mut days, &mut skipped);
+
+    days.sort_by(|a, b| a.code.cmp(&b.code));
+    (days, skipped)
+}
+
+/// 走一層資料夾。`root` 是使用者設定的日誌資料夾，用來算出要顯示的相對檔名。
+fn scan_dir(
+    root: &Path,
+    dir: &Path,
+    depth: usize,
+    days: &mut Vec<Day>,
+    skipped: &mut Vec<String>,
+) {
+    let read = match std::fs::read_dir(dir) {
         Ok(r) => r,
         Err(e) => {
-            skipped.push(format!("讀不到資料夾 {}：{}", folder.display(), e));
-            return (days, skipped);
+            skipped.push(format!("讀不到資料夾 {}：{}", dir.display(), e));
+            return;
         }
     };
 
     for entry in read.flatten() {
+        let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
+
+        if path.is_dir() {
+            // 只往數字資料夾（年、月）裡面走，最多兩層
+            if depth < 2 && name.chars().all(|c| c.is_ascii_digit()) && !name.is_empty() {
+                scan_dir(root, &path, depth + 1, days, skipped);
+            }
+            continue;
+        }
+
         if !is_log_file(&name) {
             continue;
         }
-        let text = match std::fs::read_to_string(entry.path()) {
+        let shown = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string();
+        let text = match std::fs::read_to_string(&path) {
             Ok(t) => t,
             Err(e) => {
-                skipped.push(format!("{}：讀檔失敗 {}", name, e));
+                skipped.push(format!("{}：讀檔失敗 {}", shown, e));
                 continue;
             }
         };
         let code = name.trim_end_matches(".md").to_string();
         let (entries, mut bad) = parse_file(&text);
         for b in bad.drain(..) {
-            skipped.push(format!("{}：{}", name, b));
+            skipped.push(format!("{}：{}", shown, b));
         }
-        days.push(Day { code, file: name, entries });
+        days.push(Day { code, file: shown, entries });
     }
-
-    days.sort_by(|a, b| a.code.cmp(&b.code));
-    (days, skipped)
 }
 
 /// 解析單一檔案內容。回傳條目與看不懂的行。
@@ -187,13 +225,10 @@ fn slug_of(title: &str) -> Option<String> {
     None
 }
 
-/// 判斷這一筆有沒有帶生命週期狀態（`完成` 不算）。
-fn has_lifecycle_status(e: &Entry) -> bool {
-    e.status
-        .as_deref()
-        .and_then(status_by_id)
-        .map(|s| s.lifecycle)
-        .unwrap_or(false)
+/// 判斷這一筆有沒有標狀態。`完成` 也算——看板要畫得出所有狀態，
+/// 一次性工作也得是一支工作項目才進得了那一欄。
+fn has_status(e: &Entry) -> bool {
+    e.status.as_deref().and_then(status_by_id).is_some()
 }
 
 /// 網址正規化：去掉 fragment、query 與結尾斜線。
@@ -316,12 +351,12 @@ pub fn derive_items(days: &mut [Day]) -> Vec<Item> {
         }
     }
 
-    // 4. 前三條都歸不到，但帶生命週期狀態的，讓它自己成為一支工作項目。
-    //    只放寬到「帶生命週期狀態」是刻意的：`完成` 那種一次性雜項若也變成工作項目，
-    //    看板會被灌爆。順序放在最後，前面三條一律優先，既有行為完全不變。
+    // 4. 前三條都歸不到，但有標狀態的，讓它自己成為一支工作項目。
+    //    `完成` 也收：看板要顯示所有狀態，一次性工作也得看得到。
+    //    順序放在最後，前面三條一律優先。
     for day in days.iter_mut() {
         for e in day.entries.iter_mut() {
-            if e.item.is_some() || !has_lifecycle_status(e) {
+            if e.item.is_some() || !has_status(e) {
                 continue;
             }
             e.item = Some(fallback_id(&e.project, &e.title, e.url.as_deref()));
@@ -365,8 +400,9 @@ fn build_items(days: &[Day]) -> Vec<Item> {
         }
     }
 
-    let order: HashMap<&str, usize> = crate::model::STATUSES
-        .iter()
+    // 排序照狀態表的順序，使用者自己加的狀態也算在內
+    let order: HashMap<String, usize> = crate::model::status_table()
+        .into_iter()
         .enumerate()
         .map(|(i, s)| (s.id, i))
         .collect();
@@ -375,19 +411,19 @@ fn build_items(days: &[Day]) -> Vec<Item> {
     for (slug, mut points) in history {
         points.sort_by(|a, b| a.code.cmp(&b.code));
 
-        // 目前狀態 = 最後一筆帶生命週期狀態的條目
+        // 目前狀態 = 最後一筆有標狀態的條目（`完成` 也算）
         let mut status: Option<String> = None;
         let mut since = points.first().map(|p| p.code.clone()).unwrap_or_default();
         for p in points.iter().rev() {
             if let Some(id) = p.status.as_ref() {
-                if status_by_id(id).map(|s| s.lifecycle).unwrap_or(false) {
+                if status_by_id(id).is_some() {
                     status = Some(id.clone());
                     since = p.code.clone();
                     break;
                 }
             }
         }
-        // 一次都沒進過生命週期的，不算工作項目
+        // 從頭到尾都沒標過狀態的，不算工作項目
         let status = match status {
             Some(s) => s,
             None => continue,
@@ -420,8 +456,8 @@ fn build_items(days: &[Day]) -> Vec<Item> {
     }
 
     items.sort_by(|a, b| {
-        let oa = order.get(a.status.as_str()).copied().unwrap_or(99);
-        let ob = order.get(b.status.as_str()).copied().unwrap_or(99);
+        let oa = order.get(&a.status).copied().unwrap_or(99);
+        let ob = order.get(&b.status).copied().unwrap_or(99);
         oa.cmp(&ob).then(a.since.cmp(&b.since)).then(a.id.cmp(&b.id))
     });
     items
@@ -448,6 +484,7 @@ pub fn project_list(days: &[Day]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::MAIN_SEPARATOR;
 
     fn day_of(code: &str, text: &str) -> Day {
         let (entries, _) = parse_file(text);
@@ -505,7 +542,7 @@ mod tests {
     #[test]
     fn feature_mr_inherits_item_from_adjacent_archive_mr() {
         let (entries, _) = parse_file(SAMPLE);
-        let mut days = vec![Day { code: "1150817".into(), file: "1150817.md".into(), entries }];
+        let mut days = vec![Day { code: "20260817".into(), file: "20260817.md".into(), entries }];
         let items = derive_items(&mut days);
         assert_eq!(days[0].entries[0].item.as_deref(), Some("room-page-full-layout"));
         assert!(items.iter().any(|i| i.id == "room-page-full-layout" && i.status == "archived"));
@@ -519,14 +556,14 @@ mod tests {
         let (e1, _) = parse_file(day1);
         let (e2, _) = parse_file(day2);
         let mut days = vec![
-            Day { code: "1150815".into(), file: "1150815.md".into(), entries: e1 },
-            Day { code: "1150816".into(), file: "1150816.md".into(), entries: e2 },
+            Day { code: "20260815".into(), file: "20260815.md".into(), entries: e1 },
+            Day { code: "20260816".into(), file: "20260816.md".into(), entries: e2 },
         ];
         let items = derive_items(&mut days);
         assert_eq!(days[1].entries[0].item.as_deref(), Some("search-message-history"));
         let it = items.iter().find(|i| i.id == "search-message-history").unwrap();
         assert_eq!(it.status, "building");
-        assert_eq!(it.since, "1150816");
+        assert_eq!(it.since, "20260816");
     }
 
     /// 看板改狀態會往當天的 md 補一行 `slug：描述`，
@@ -534,16 +571,16 @@ mod tests {
     #[test]
     fn a_line_written_by_the_board_moves_the_status() {
         let (entries, _) = parse_file(SAMPLE);
-        let mut days = vec![Day { code: "1150817".into(), file: "1150817.md".into(), entries }];
+        let mut days = vec![Day { code: "20260817".into(), file: "20260817.md".into(), entries }];
         days.push(day_of(
-            "1150818",
+            "20260818",
             "## project_a\n\n- `實作中` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n",
         ));
 
         let items = derive_items(&mut days);
         let it = items.iter().find(|i| i.id == "search-message-history").unwrap();
         assert_eq!(it.status, "building");
-        assert_eq!(it.since, "1150818");
+        assert_eq!(it.since, "20260818");
     }
 
     /// 行號要對得上原始檔案：看板改狀態就是靠它定位，不是字串比對
@@ -565,7 +602,7 @@ mod tests {
     #[test]
     fn unassigned_lifecycle_entry_becomes_its_own_item() {
         let md = "## project_b\n\n- `待合併` [feat: 上傳路徑改由後台設定](http://gitlab.example.com/group/project_b/-/merge_requests/392)\n";
-        let mut days = vec![day_of("1150818", md)];
+        let mut days = vec![day_of("20260818", md)];
         let items = derive_items(&mut days);
 
         let id = days[0].entries[0].item.clone().expect("應該要歸戶到 fallback 項目");
@@ -581,11 +618,11 @@ mod tests {
     fn fallback_id_is_stable_and_merges_the_same_link_across_days() {
         // 網址結尾斜線／query／fragment 不影響 id
         let d1 = day_of(
-            "1150817",
+            "20260817",
             "## project_b\n\n- `實作中` [feat: 上傳路徑改由後台設定](http://gitlab.example.com/group/project_b/-/merge_requests/392/)\n",
         );
         let d2 = day_of(
-            "1150818",
+            "20260818",
             "## project_b\n\n- `待合併` [開好 MR 等審](http://gitlab.example.com/group/project_b/-/merge_requests/392?tab=diffs#note-1)\n",
         );
         let mut days = vec![d1, d2];
@@ -597,14 +634,14 @@ mod tests {
 
         let it = items.iter().find(|i| i.id == a).unwrap();
         assert_eq!(it.status, "review", "狀態取最後一筆");
-        assert_eq!(it.since, "1150818");
+        assert_eq!(it.since, "20260818");
         assert_eq!(it.history.len(), 2);
     }
 
     #[test]
     fn fallback_id_without_a_link_uses_project_and_title() {
-        let d1 = day_of("1150817", "## project_b\n\n- `提案中` 匯出報表的欄位規格\n");
-        let d2 = day_of("1150818", "## project_b\n\n- `實作中` 匯出報表的欄位規格\n");
+        let d1 = day_of("20260817", "## project_b\n\n- `提案中` 匯出報表的欄位規格\n");
+        let d2 = day_of("20260818", "## project_b\n\n- `實作中` 匯出報表的欄位規格\n");
         let mut days = vec![d1, d2];
         let items = derive_items(&mut days);
 
@@ -616,19 +653,21 @@ mod tests {
     }
 
     #[test]
-    fn done_entries_never_become_items() {
+    fn done_entries_become_items_too() {
         let md = "## 其他\n\n- `完成` 議題對帳：兩邊未結案數對齊\n- 沒標狀態的一行\n";
-        let mut days = vec![day_of("1150818", md)];
+        let mut days = vec![day_of("20260818", md)];
         let items = derive_items(&mut days);
-        assert!(days[0].entries.iter().all(|e| e.item.is_none()), "`完成` 與沒標狀態的行都不該歸戶");
-        assert!(items.is_empty());
+        assert!(days[0].entries[0].item.is_some(), "`完成` 也要歸戶，看板才畫得出那一欄");
+        assert!(days[0].entries[1].item.is_none(), "沒標狀態的行還是不歸戶");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].status, "done");
     }
 
     /// 護欄：前三條規則能歸戶的，一律不走 fallback
     #[test]
     fn existing_rules_still_win_over_the_fallback() {
         let (entries, _) = parse_file(SAMPLE);
-        let mut days = vec![Day { code: "1150817".into(), file: "1150817.md".into(), entries }];
+        let mut days = vec![Day { code: "20260817".into(), file: "20260817.md".into(), entries }];
         let items = derive_items(&mut days);
 
         // slug 前綴、chore: archive、相鄰封存 MR 三種歸戶結果都不變
@@ -636,15 +675,20 @@ mod tests {
         assert_eq!(days[0].entries[1].item.as_deref(), Some("room-page-full-layout"));
         assert_eq!(days[0].entries[2].item.as_deref(), Some("search-message-history"));
         assert_eq!(days[0].entries[3].item.as_deref(), Some("archive-recalled-attachments"));
-        assert!(days[0].entries[4].item.is_none(), "`完成` 不歸戶");
-        assert!(!items.iter().any(|i| i.id.starts_with("auto-")), "這份範例不該產生 fallback 項目");
+        // `完成` 那筆歸不到既有的 slug，會自成一支 fallback 項目
+        assert!(days[0].entries[4].item.as_deref().unwrap().starts_with("auto-"), "`完成` 自成一支");
+        assert_eq!(
+            items.iter().filter(|i| i.id.starts_with("auto-")).count(),
+            2,
+            "兩筆 `完成` 各自成為一支 fallback 項目"
+        );
     }
 
     /// 靠重複連結歸戶的，也不能被 fallback 搶走
     #[test]
     fn repeated_url_rule_still_wins_over_the_fallback() {
-        let d1 = day_of("1150815", "## project_a\n\n- `提案中` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
-        let d2 = day_of("1150816", "## project_a\n\n- `實作中` [開分支動工](https://redmine.example.com/issues/32979)\n");
+        let d1 = day_of("20260815", "## project_a\n\n- `提案中` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
+        let d2 = day_of("20260816", "## project_a\n\n- `實作中` [開分支動工](https://redmine.example.com/issues/32979)\n");
         let mut days = vec![d1, d2];
         let items = derive_items(&mut days);
         assert_eq!(days[1].entries[0].item.as_deref(), Some("search-message-history"));
@@ -657,11 +701,11 @@ mod tests {
     #[test]
     fn testing_status_is_parsed_and_moves_the_item() {
         let d1 = day_of(
-            "1150818",
+            "20260818",
             "## project_a\n\n- `實作中` [deploy-preview：預覽環境部署](https://redmine.example.com/issues/40001)\n",
         );
         let d2 = day_of(
-            "1150819",
+            "20260819",
             "## project_a\n\n- `測試中` [deploy-preview：推上 staging 等驗證](https://redmine.example.com/issues/40001)\n",
         );
         let mut days = vec![d1, d2];
@@ -671,14 +715,14 @@ mod tests {
         assert_eq!(days[1].entries[0].item.as_deref(), Some("deploy-preview"));
         let it = items.iter().find(|i| i.id == "deploy-preview").unwrap();
         assert_eq!(it.status, "testing");
-        assert_eq!(it.since, "1150819");
+        assert_eq!(it.since, "20260819");
     }
 
     /// 沒有 slug、也歸不到別人的 `測試中` 條目，一樣自己成為一支工作項目
     #[test]
     fn testing_entry_without_a_slug_becomes_its_own_item() {
         let md = "## project_b\n\n- `測試中` [feat: 上傳路徑改由後台設定](http://gitlab.example.com/group/project_b/-/merge_requests/392)\n";
-        let mut days = vec![day_of("1150819", md)];
+        let mut days = vec![day_of("20260819", md)];
         let items = derive_items(&mut days);
 
         let id = days[0].entries[0].item.clone().expect("帶生命週期狀態就該歸戶");
@@ -700,8 +744,32 @@ mod tests {
 
     #[test]
     fn only_seven_digit_filenames_count() {
-        assert!(is_log_file("1150817.md"));
-        assert!(!is_log_file("115081.md"));
+        assert!(is_log_file("20260817.md"));
+        assert!(!is_log_file("1150817.md"));
         assert!(!is_log_file("README.md"));
+    }
+
+    #[test]
+    fn log_path_puts_a_day_under_year_and_month() {
+        let p = log_path(Path::new("/logs"), "20260817");
+        assert_eq!(p, Path::new("/logs/2026/08/20260817.md"));
+    }
+
+    #[test]
+    fn scan_walks_into_the_year_and_month_folders() {
+        let dir = std::env::temp_dir().join(format!("worklog-scan-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("2026/08")).unwrap();
+        std::fs::create_dir_all(dir.join("2026/09")).unwrap();
+        std::fs::write(dir.join("2026/08/20260817.md"), "## project_a\n\n- `完成` 甲\n").unwrap();
+        std::fs::write(dir.join("2026/09/20260901.md"), "## project_a\n\n- `完成` 乙\n").unwrap();
+        // 不是日誌檔的東西不要撿進來
+        std::fs::write(dir.join("2026/08/note.md"), "隨手記").unwrap();
+
+        let (days, _) = scan(&dir);
+        let codes: Vec<&str> = days.iter().map(|d| d.code.as_str()).collect();
+        assert_eq!(codes, vec!["20260817", "20260901"]);
+        assert_eq!(days[0].file, format!("2026{}08{}20260817.md", MAIN_SEPARATOR, MAIN_SEPARATOR));
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

@@ -1,8 +1,10 @@
 //! 資料結構與狀態表。
 //!
-//! 日誌檔一天一個 `<民國7碼>.md`。
+//! 日誌檔一天一個 `<年>/<月>/<西元8碼>.md`。
 //! 工作項目（item）不是檔案裡直接寫的，是從條目推導出來的——
 //! 推導規則在 `parser.rs`，這裡只放型別。
+
+use std::sync::{LazyLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 
@@ -29,37 +31,76 @@ pub const STATUSES: &[Status] = &[
     Status { id: "done",      label: "Done",      zh: "完成",   hint: "不走生命週期的一次性工作",       lifecycle: false, branch: false },
 ];
 
-pub fn status_by_zh(zh: &str) -> Option<&'static Status> {
-    STATUSES.iter().find(|s| s.zh == zh)
+pub fn status_by_zh(zh: &str) -> Option<StatusDto> {
+    status_table().into_iter().find(|s| s.zh == zh)
 }
 
-pub fn status_by_id(id: &str) -> Option<&'static Status> {
-    STATUSES.iter().find(|s| s.id == id)
+pub fn status_by_id(id: &str) -> Option<StatusDto> {
+    status_table().into_iter().find(|s| s.id == id)
 }
 
-/// 送給前端的狀態表，順序就是流程軌的順序。
-#[derive(Serialize)]
+/// 自訂狀態的三個顏色。內建八個的顏色寫在前端的 Tailwind 設定裡，這裡是 None。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatusColor {
+    /// 實心圓點
+    pub dot: String,
+    /// 淺色底
+    pub tint: String,
+    /// 深色底
+    pub dtint: String,
+}
+
+/// 狀態表上的一格。內建八個是 `builtin: true`，其餘是使用者自己加的。
+///
+/// 前端拿到的順序就是看板由左到右的欄序。
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusDto {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub zh: &'static str,
-    pub hint: &'static str,
+    pub id: String,
+    pub label: String,
+    pub zh: String,
+    pub hint: String,
+    #[serde(default)]
     pub lifecycle: bool,
+    #[serde(default)]
     pub branch: bool,
+    #[serde(default)]
+    pub color: Option<StatusColor>,
+    #[serde(default)]
+    pub builtin: bool,
 }
 
-pub fn status_table() -> Vec<StatusDto> {
+/// 內建那八個，照寫死的順序。
+pub fn builtin_table() -> Vec<StatusDto> {
     STATUSES
         .iter()
         .map(|s| StatusDto {
-            id: s.id,
-            label: s.label,
-            zh: s.zh,
-            hint: s.hint,
+            id: s.id.to_string(),
+            label: s.label.to_string(),
+            zh: s.zh.to_string(),
+            hint: s.hint.to_string(),
             lifecycle: s.lifecycle,
             branch: s.branch,
+            color: None,
+            builtin: true,
         })
         .collect()
+}
+
+/// 目前生效的狀態表。
+///
+/// 解析（`parser.rs`）與寫檔（`commands.rs`）都要認得使用者自己加的狀態，
+/// 所以表放在這裡讓兩邊共用；app 啟動時由 `store::load_statuses()` 灌進來。
+/// 沒灌之前就是內建那八個——測試因此不必碰使用者的設定檔。
+static TABLE: LazyLock<RwLock<Vec<StatusDto>>> = LazyLock::new(|| RwLock::new(builtin_table()));
+
+pub fn set_table(list: Vec<StatusDto>) {
+    if let Ok(mut t) = TABLE.write() {
+        *t = list;
+    }
+}
+
+pub fn status_table() -> Vec<StatusDto> {
+    TABLE.read().map(|t| t.clone()).unwrap_or_else(|_| builtin_table())
 }
 
 /// 日誌檔裡的一行條目。
@@ -88,7 +129,7 @@ pub struct Entry {
 /// 一天。
 #[derive(Debug, Clone, Serialize)]
 pub struct Day {
-    /// 民國 7 碼，例如 1150817
+    /// 西元 8 碼，例如 20260817
     pub code: String,
     pub file: String,
     pub entries: Vec<Entry>,

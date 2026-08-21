@@ -10,10 +10,10 @@ use crate::model::{Day, StatusDto, Workspace};
 use crate::parser;
 use crate::store::{self, Settings, Todo};
 
-/// 今天的民國 7 碼
+/// 今天的西元 8 碼，例如 20260821
 pub fn today_code() -> String {
     let d = Local::now().date_naive();
-    format!("{}{:02}{:02}", d.year() - 1911, d.month(), d.day())
+    format!("{}{:02}{:02}", d.year(), d.month(), d.day())
 }
 
 #[derive(Serialize)]
@@ -129,7 +129,7 @@ pub fn load_rules() -> RulesDto {
 /// 把規則寫進 `~/.claude/CLAUDE.md`。
 ///
 /// 只換 `# 每日工作日誌` 那一段，其他內容不動；寫之前先備份成
-/// `CLAUDE.md.bak-<民國7碼>-<時分秒>`。
+/// `CLAUDE.md.bak-<西元8碼>-<時分秒>`。
 #[tauri::command]
 pub fn save_rules(text: String) -> Result<RulesDto, String> {
     let stamp = format!("{}-{}", today_code(), Local::now().format("%H%M%S"));
@@ -205,7 +205,7 @@ pub fn load_workspace() -> Workspace {
 /// 看板改狀態的結果，讓前端知道寫到哪個檔、是改了既有那一行還是新增一行。
 #[derive(Serialize)]
 pub struct MoveResult {
-    /// 寫進哪一天（民國 7 碼）
+    /// 寫進哪一天（西元 8 碼）
     pub code: String,
     pub file: String,
     /// 新狀態的中文標籤，直接拿去顯示
@@ -247,7 +247,9 @@ pub fn move_item(item_id: String, status_id: String) -> Result<MoveResult, Strin
         .ok_or_else(|| format!("找不到工作項目：{}", item_id))?;
 
     let code = today_code();
-    let file = format!("{}.md", code);
+    let file = parser::log_path(Path::new(""), &code)
+        .to_string_lossy()
+        .to_string();
 
     if item.status == status_id {
         return Ok(MoveResult {
@@ -344,6 +346,123 @@ pub fn status_table() -> Vec<StatusDto> {
     crate::model::status_table()
 }
 
+/* ---------- 自訂狀態 ----------
+   內建八個寫死在 model.rs，使用者可以自己加。加出來的狀態跟內建的一樣：
+   看板有它的欄、卡片可以拖進去、日誌檔裡寫的就是它的中文標籤。 */
+
+/// 自動配色用的候選盤，跟內建八色錯開。用完就從頭再來。
+const PALETTE: &[(&str, &str, &str)] = &[
+    ("#ff2d55", "#ffe0e6", "#3d1420"), // 粉紅
+    ("#5856d6", "#e5e5fa", "#1e1d40"), // 靛藍
+    ("#00c7be", "#d5f5f3", "#0f3330"), // 薄荷
+    ("#a2845e", "#f0e9e0", "#33291f"), // 棕
+    ("#d946ef", "#f9e2fd", "#3a1240"), // 洋紅
+    ("#64748b", "#e7eaef", "#262b33"), // 石板
+];
+
+/// 挑一個還沒用過的顏色；全用過了就照數量輪一輪。
+fn next_color(table: &[StatusDto]) -> crate::model::StatusColor {
+    let used: Vec<&str> = table
+        .iter()
+        .filter_map(|s| s.color.as_ref().map(|c| c.dot.as_str()))
+        .collect();
+    let pick = PALETTE
+        .iter()
+        .find(|(dot, _, _)| !used.contains(dot))
+        .unwrap_or(&PALETTE[used.len() % PALETTE.len()]);
+    crate::model::StatusColor {
+        dot: pick.0.to_string(),
+        tint: pick.1.to_string(),
+        dtint: pick.2.to_string(),
+    }
+}
+
+/// 新狀態的 id：程式內部用，日誌檔裡寫的是中文標籤，所以取個不會撞的就好。
+fn next_id(table: &[StatusDto]) -> String {
+    for n in 1..1000 {
+        let id = format!("custom{}", n);
+        if !table.iter().any(|s| s.id == id) {
+            return id;
+        }
+    }
+    "custom".to_string()
+}
+
+/// 新增一個狀態，插在 `after_id` 那一欄後面（空字串＝排到最後）。
+///
+/// 回傳更新後的整張表；順序就是看板由左到右的欄序。
+#[tauri::command]
+pub fn add_status(zh: String, hint: String, after_id: String) -> Result<Vec<StatusDto>, String> {
+    let zh = zh.trim().to_string();
+    if zh.is_empty() {
+        return Err("狀態名稱不能空白".into());
+    }
+    if zh.contains('`') {
+        return Err("狀態名稱不能有反引號（`），那是日誌檔裡的標籤符號".into());
+    }
+    let mut table = crate::model::status_table();
+    if table.iter().any(|s| s.zh == zh) {
+        return Err(format!("已經有「{}」這個狀態了", zh));
+    }
+
+    let st = StatusDto {
+        id: next_id(&table),
+        label: zh.clone(),
+        zh,
+        hint: hint.trim().to_string(),
+        lifecycle: true,
+        branch: false,
+        color: Some(next_color(&table)),
+        builtin: false,
+    };
+
+    let at = match table.iter().position(|s| s.id == after_id) {
+        Some(i) => i + 1,
+        None => table.len(),
+    };
+    table.insert(at, st);
+
+    store::save_statuses(&table).map_err(|e| e.to_string())?;
+    crate::model::set_table(table.clone());
+    Ok(table)
+}
+
+/// 把新狀態插進日誌規則後的完整規則本文。
+///
+/// 只是算給前端看的預覽，**不寫檔**——要真的生效得使用者再按一次
+/// 「寫進規則」，那條路走既有的 `save_rules`。
+#[tauri::command]
+pub fn rules_with_status(zh: String, hint: String, after_zh: String) -> RulesDto {
+    let (text, present) = store::load_rules();
+    let next = store::insert_status_into_rules(&text, zh.trim(), hint.trim(), after_zh.trim());
+    RulesDto {
+        text: next,
+        default_text: store::default_rules(),
+        present,
+        path: store::claude_md_display(),
+        backup: None,
+    }
+}
+
+/// 刪掉一個自訂狀態。內建的八個刪不得。
+///
+/// 日誌檔一個字都不動——已經寫成那個標籤的行留在原地，只是 app 之後不認得它。
+#[tauri::command]
+pub fn delete_status(id: String) -> Result<Vec<StatusDto>, String> {
+    let mut table = crate::model::status_table();
+    let at = table
+        .iter()
+        .position(|s| s.id == id)
+        .ok_or_else(|| format!("沒有這個狀態：{}", id))?;
+    if table[at].builtin {
+        return Err(format!("「{}」是內建狀態，不能刪", table[at].zh));
+    }
+    table.remove(at);
+    store::save_statuses(&table).map_err(|e| e.to_string())?;
+    crate::model::set_table(table.clone());
+    Ok(table)
+}
+
 #[tauri::command]
 pub fn load_todos() -> Vec<Todo> {
     store::load_todos()
@@ -364,7 +483,7 @@ pub fn open_url(url: String) -> Result<(), String> {
 #[tauri::command]
 pub fn open_log_file(code: String) -> Result<(), String> {
     let settings = store::load_settings();
-    let path = PathBuf::from(settings.folder).join(format!("{}.md", code));
+    let path = parser::log_path(&PathBuf::from(settings.folder), &code);
     if !path.is_file() {
         return Err(format!("找不到檔案：{}", path.display()));
     }
@@ -378,7 +497,7 @@ pub fn open_log_file(code: String) -> Result<(), String> {
 /// 寫入結果，讓前端知道是新建檔案、真的寫進去了、還是那一行本來就在。
 #[derive(Serialize)]
 pub struct AppendResult {
-    /// 民國 7 碼
+    /// 西元 8 碼
     pub code: String,
     pub file: String,
     pub project: String,
@@ -487,6 +606,15 @@ fn merge_entry_line(text: &str, project: &str, line: &str) -> Option<String> {
     Some(out)
 }
 
+/// 寫檔。日誌檔在 `<年>/<月>/` 底下，那兩層資料夾可能還不存在，先補出來。
+fn write_log(path: &Path, text: String) -> Result<(), String> {
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| format!("建不出資料夾 {}：{}", dir.display(), e))?;
+    }
+    std::fs::write(path, text).map_err(|e| format!("寫入失敗 {}：{}", path.display(), e))
+}
+
 /// 真正動檔案的部分，抽出來讓測試可以指到臨時資料夾。
 fn append_entry_in(
     folder: &Path,
@@ -502,8 +630,12 @@ fn append_entry_in(
     };
     let line = entry_line(status, text, url)?;
 
-    let file = format!("{}.md", code);
-    let path = folder.join(&file);
+    let path = parser::log_path(folder, code);
+    let file = path
+        .strip_prefix(folder)
+        .unwrap_or(&path)
+        .to_string_lossy()
+        .to_string();
     let created = !path.exists();
     let existing = if created {
         String::new()
@@ -524,8 +656,7 @@ fn append_entry_in(
     match merge_entry_line(&existing, project, &line) {
         None => Ok(AppendResult { duplicate: true, created: false, ..result }),
         Some(next) => {
-            std::fs::write(&path, next)
-                .map_err(|e| format!("寫入失敗 {}：{}", path.display(), e))?;
+            write_log(&path, next)?;
             Ok(result)
         }
     }
@@ -611,7 +742,7 @@ fn write_status_in(
     let st = crate::model::status_by_id(status)
         .ok_or_else(|| format!("沒有這個狀態：{}", status))?;
 
-    let path = folder.join(format!("{}.md", code));
+    let path = parser::log_path(folder, code);
     let created = !path.exists();
     let existing = if created {
         String::new()
@@ -621,10 +752,9 @@ fn write_status_in(
     };
 
     if let Some(i) = at {
-        if let Some(next) = replace_status_at(&existing, i, st.zh) {
+        if let Some(next) = replace_status_at(&existing, i, &st.zh) {
             if next != existing {
-                std::fs::write(&path, next)
-                    .map_err(|e| format!("寫入失敗 {}：{}", path.display(), e))?;
+                write_log(&path, next)?;
             }
             return Ok(Written { updated: true, created: false });
         }
@@ -636,13 +766,12 @@ fn write_status_in(
     };
     let line = entry_line(status, text, url)?;
     if let Some(next) = merge_entry_line(&existing, project, &line) {
-        std::fs::write(&path, next)
-            .map_err(|e| format!("寫入失敗 {}：{}", path.display(), e))?;
+        write_log(&path, next)?;
     }
     Ok(Written { updated: false, created })
 }
 
-/// 把一筆 TODO 寫進**今天**的 `<民國7碼>.md`。
+/// 把一筆 TODO 寫進**今天**的 `<年>/<月>/<西元8碼>.md`。
 #[tauri::command]
 pub fn append_entry(
     project: String,
@@ -755,7 +884,7 @@ mod tests {
     /// 只插一行，別的行一個字都不能動
     #[test]
     fn other_lines_are_left_untouched() {
-        let src = "# 1150818\n\n## project_a\n\n- `完成` 甲（備註裡有 `反引號`）\n\n> 隨手筆記\n\n## project_b\n\n- 沒標狀態的一行\n";
+        let src = "# 20260818\n\n## project_a\n\n- `完成` 甲（備註裡有 `反引號`）\n\n> 隨手筆記\n\n## project_b\n\n- 沒標狀態的一行\n";
         let out = merge_entry_line(src, "project_b", "- `完成` 乙").unwrap();
         for line in src.lines() {
             assert!(out.contains(line), "原本的行不見了：{}", line);
@@ -766,13 +895,13 @@ mod tests {
     #[test]
     fn append_entry_in_creates_then_appends() {
         let dir = temp_folder("append");
-        let r = append_entry_in(&dir, "1150818", "project_a", "building", "甲", "").unwrap();
+        let r = append_entry_in(&dir, "20260818", "project_a", "building", "甲", "").unwrap();
         assert!(r.created);
         assert!(!r.duplicate);
-        let path = dir.join("1150818.md");
+        let path = parser::log_path(&dir, "20260818");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "## project_a\n\n- `實作中` 甲\n");
 
-        let r = append_entry_in(&dir, "1150818", "project_a", "review", "乙", "http://x/1").unwrap();
+        let r = append_entry_in(&dir, "20260818", "project_a", "review", "乙", "http://x/1").unwrap();
         assert!(!r.created);
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
@@ -780,7 +909,7 @@ mod tests {
         );
 
         // 一樣的行按第二次：不寫、回報 duplicate
-        let r = append_entry_in(&dir, "1150818", "project_a", "review", "乙", "http://x/1").unwrap();
+        let r = append_entry_in(&dir, "20260818", "project_a", "review", "乙", "http://x/1").unwrap();
         assert!(r.duplicate);
         assert_eq!(
             std::fs::read_to_string(&path).unwrap(),
@@ -793,9 +922,12 @@ mod tests {
     #[test]
     fn append_entry_in_defaults_to_the_other_project() {
         let dir = temp_folder("other");
-        let r = append_entry_in(&dir, "1150818", "  ", "", "隨手記", "").unwrap();
+        let r = append_entry_in(&dir, "20260818", "  ", "", "隨手記", "").unwrap();
         assert_eq!(r.project, "其他");
-        assert_eq!(std::fs::read_to_string(dir.join("1150818.md")).unwrap(), "## 其他\n\n- 隨手記\n");
+        assert_eq!(
+            std::fs::read_to_string(parser::log_path(&dir, "20260818")).unwrap(),
+            "## 其他\n\n- 隨手記\n"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -824,25 +956,27 @@ mod tests {
     }
 
     fn write(dir: &Path, code: &str, text: &str) {
-        std::fs::write(dir.join(format!("{}.md", code)), text).unwrap();
+        let path = parser::log_path(dir, code);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
     }
 
     fn read(dir: &Path, code: &str) -> String {
-        std::fs::read_to_string(dir.join(format!("{}.md", code))).unwrap()
+        std::fs::read_to_string(parser::log_path(dir, code)).unwrap()
     }
 
     /// 今天已經有那一行：只換狀態標籤，其他字元一個都不能變
     #[test]
     fn moving_an_item_only_swaps_the_status_tag_of_todays_line() {
         let dir = temp_folder("swap");
-        let src = "# 1150818\n\n## project_a\n\n- `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)（等排程，MR 還沒開）\n\n> 隨手筆記\n";
-        write(&dir, "1150818", src);
+        let src = "# 20260818\n\n## project_a\n\n- `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)（等排程，MR 還沒開）\n\n> 隨手筆記\n";
+        write(&dir, "20260818", src);
 
-        let w = drag(&dir, "1150818", "search-message-history", "building");
+        let w = drag(&dir, "20260818", "search-message-history", "building");
         assert!(w.updated, "應該是改既有那一行，不是新增");
         assert!(!w.created);
 
-        let out = read(&dir, "1150818");
+        let out = read(&dir, "20260818");
         assert_eq!(out, src.replace("`暫存`", "`實作中`"));
         assert_eq!(out.lines().count(), src.lines().count(), "行數不該變");
         assert_eq!(status_of(&dir, "search-message-history"), "building");
@@ -855,11 +989,11 @@ mod tests {
     fn the_right_line_is_picked_when_two_lines_look_alike() {
         let dir = temp_folder("dup");
         let src = "## project_a\n\n- `暫存` [dup-slug：一樣的標題](https://redmine.example.com/issues/1)\n\n## project_b\n\n- `暫存` [dup-slug：一樣的標題](https://redmine.example.com/issues/1)\n";
-        write(&dir, "1150818", src);
+        write(&dir, "20260818", src);
 
-        drag(&dir, "1150818", "dup-slug", "building");
+        drag(&dir, "20260818", "dup-slug", "building");
 
-        let out = read(&dir, "1150818");
+        let out = read(&dir, "20260818");
         assert_eq!(out.matches("`實作中`").count(), 1, "只該有一行被改到");
         assert_eq!(out.matches("`暫存`").count(), 1, "另一行要原封不動");
         // 定位取的是最後一筆帶生命週期狀態的行
@@ -873,13 +1007,13 @@ mod tests {
     fn a_line_without_a_status_tag_gets_one() {
         let dir = temp_folder("notag");
         // 沒標狀態的行歸不了戶，所以先用同一個連結在別天建立這支項目
-        write(&dir, "1150817", "## project_a\n\n- `提案中` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
-        write(&dir, "1150818", "## project_a\n\n- [開分支動工](https://redmine.example.com/issues/32979)\n");
+        write(&dir, "20260817", "## project_a\n\n- `提案中` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
+        write(&dir, "20260818", "## project_a\n\n- [開分支動工](https://redmine.example.com/issues/32979)\n");
 
-        let w = drag(&dir, "1150818", "search-message-history", "building");
+        let w = drag(&dir, "20260818", "search-message-history", "building");
         assert!(w.updated);
         assert_eq!(
-            read(&dir, "1150818"),
+            read(&dir, "20260818"),
             "## project_a\n\n- `實作中` [開分支動工](https://redmine.example.com/issues/32979)\n"
         );
         assert_eq!(status_of(&dir, "search-message-history"), "building");
@@ -891,14 +1025,14 @@ mod tests {
     #[test]
     fn an_item_without_a_line_today_gets_a_new_one_in_its_project() {
         let dir = temp_folder("newline");
-        write(&dir, "1150817", "## project_a\n\n- `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
-        write(&dir, "1150818", "## project_a\n\n- `完成` 議題對帳\n\n## project_b\n\n- `完成` 別的事\n");
+        write(&dir, "20260817", "## project_a\n\n- `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
+        write(&dir, "20260818", "## project_a\n\n- `完成` 議題對帳\n\n## project_b\n\n- `完成` 別的事\n");
 
-        let w = drag(&dir, "1150818", "search-message-history", "review");
+        let w = drag(&dir, "20260818", "search-message-history", "review");
         assert!(!w.updated, "今天還沒有那一行，應該是新增");
         assert!(!w.created);
         assert_eq!(
-            read(&dir, "1150818"),
+            read(&dir, "20260818"),
             "## project_a\n\n- `完成` 議題對帳\n- `待合併` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n\n## project_b\n\n- `完成` 別的事\n"
         );
         assert_eq!(status_of(&dir, "search-message-history"), "review");
@@ -910,13 +1044,13 @@ mod tests {
     #[test]
     fn a_missing_project_section_is_added_at_the_end() {
         let dir = temp_folder("newsection");
-        write(&dir, "1150817", "## project_a\n\n- `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
-        write(&dir, "1150818", "## 其他\n\n- `完成` 環境設定\n");
+        write(&dir, "20260817", "## project_a\n\n- `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
+        write(&dir, "20260818", "## 其他\n\n- `完成` 環境設定\n");
 
-        drag(&dir, "1150818", "search-message-history", "building");
+        drag(&dir, "20260818", "search-message-history", "building");
 
         assert_eq!(
-            read(&dir, "1150818"),
+            read(&dir, "20260818"),
             "## 其他\n\n- `完成` 環境設定\n\n## project_a\n\n- `實作中` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n"
         );
         assert_eq!(status_of(&dir, "search-message-history"), "building");
@@ -928,13 +1062,13 @@ mod tests {
     #[test]
     fn todays_file_is_created_when_missing() {
         let dir = temp_folder("create");
-        write(&dir, "1150817", "## project_a\n\n- `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
+        write(&dir, "20260817", "## project_a\n\n- `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
 
-        let w = drag(&dir, "1150818", "search-message-history", "testing");
+        let w = drag(&dir, "20260818", "search-message-history", "testing");
         assert!(w.created);
         assert!(!w.updated);
         assert_eq!(
-            read(&dir, "1150818"),
+            read(&dir, "20260818"),
             "## project_a\n\n- `測試中` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n"
         );
         assert_eq!(status_of(&dir, "search-message-history"), "testing");
@@ -946,12 +1080,12 @@ mod tests {
     #[test]
     fn dragging_twice_in_a_day_keeps_a_single_line() {
         let dir = temp_folder("twice");
-        write(&dir, "1150817", "## project_a\n\n- `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
+        write(&dir, "20260817", "## project_a\n\n- `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)\n");
 
-        drag(&dir, "1150818", "search-message-history", "building");
-        let w = drag(&dir, "1150818", "search-message-history", "review");
+        drag(&dir, "20260818", "search-message-history", "building");
+        let w = drag(&dir, "20260818", "search-message-history", "review");
         assert!(w.updated);
-        assert_eq!(read(&dir, "1150818").matches("- `").count(), 1, "同一天只該有一行");
+        assert_eq!(read(&dir, "20260818").matches("- `").count(), 1, "同一天只該有一行");
         assert_eq!(status_of(&dir, "search-message-history"), "review");
 
         std::fs::remove_dir_all(&dir).ok();
@@ -961,15 +1095,15 @@ mod tests {
     #[test]
     fn auto_items_do_not_get_the_hash_written_into_the_title() {
         let dir = temp_folder("auto");
-        write(&dir, "1150817", "## project_b\n\n- `實作中` [feat: 上傳路徑改由後台設定](http://gitlab.example.com/group/project_b/-/merge_requests/392)\n");
+        write(&dir, "20260817", "## project_b\n\n- `實作中` [feat: 上傳路徑改由後台設定](http://gitlab.example.com/group/project_b/-/merge_requests/392)\n");
 
         let (mut days, _) = parser::scan(&dir);
         let items = parser::derive_items(&mut days);
         let id = items[0].id.clone();
         assert!(id.starts_with("auto-"));
 
-        drag(&dir, "1150818", &id, "review");
-        let out = read(&dir, "1150818");
+        drag(&dir, "20260818", &id, "review");
+        let out = read(&dir, "20260818");
         assert!(!out.contains("auto-"), "雜湊 id 不該寫進日誌：{}", out);
         assert_eq!(
             out,
@@ -1012,8 +1146,8 @@ mod tests {
     #[test]
     fn append_entry_in_rejects_a_bad_status_without_touching_the_file() {
         let dir = temp_folder("bad");
-        assert!(append_entry_in(&dir, "1150818", "project_a", "nope", "甲", "").is_err());
-        assert!(!dir.join("1150818.md").exists());
+        assert!(append_entry_in(&dir, "20260818", "project_a", "nope", "甲", "").is_err());
+        assert!(!parser::log_path(&dir, "20260818").exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 }

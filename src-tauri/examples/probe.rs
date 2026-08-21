@@ -10,6 +10,9 @@ use std::path::PathBuf;
 use worklog_app::{parser, store};
 
 fn main() {
+    // 自訂狀態也要認得，不然使用者加的標籤會被當成看不懂的行
+    worklog_app::model::set_table(store::load_statuses());
+
     let arg = std::env::args().nth(1);
     let folder = match arg {
         Some(p) => PathBuf::from(p),

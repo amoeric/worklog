@@ -32,7 +32,7 @@
      Shell 只管「輸入框與關鍵字」：關鍵字一變就丟一顆 worklog:search 事件出去，
      怎麼過濾、怎麼重畫是各頁自己的事。
      關鍵字記在網址的 ?q=，所以重新整理或切到別的分頁再回來都還在。 */
-  var SEARCH_PAGES = ['index.html', 'board.html', 'daily-log.html'];
+  var SEARCH_PAGES = ['index.html', 'board.html', 'daily-log.html', 'status.html'];
 
   function fileOf() {
     return location.pathname.split('/').pop() || 'index.html';
@@ -934,7 +934,7 @@
     var msg = null;
     if (!ws.folder) msg = '還沒設定日誌資料夾。';
     else if (!ws.folder_exists) msg = '找不到資料夾 ' + ws.folder;
-    else if (!ws.days.length) msg = ws.folder + ' 裡沒有 <民國7碼>.md，例如 1150817.md。';
+    else if (!ws.days.length) msg = ws.folder + ' 裡沒有 <年>/<月>/<西元8碼>.md，例如 2026/08/20260817.md。';
     if (!msg) return;
 
     var bar = document.createElement('div');

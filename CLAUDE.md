@@ -1,7 +1,7 @@
 # 每日工作日誌 app
 
-Rust（Tauri 2）＋ 靜態 HTML 的桌面 app，讀資料夾裡的 `<民國7碼>.md`（例如 `1150818.md`，
-民國年 = 西元年 − 1911），把「每天做了什麼」與「每支工作項目走到哪一步」畫出來。
+Rust（Tauri 2）＋ 靜態 HTML 的桌面 app，讀資料夾裡的 `<西元年>/<月>/<西元8碼>.md`（例如
+`2026/08/20260818.md`），把「每天做了什麼」與「每支工作項目走到哪一步」畫出來。
 全貌看 `README.md`。
 
 ## 開始做事之前：先確認日誌規則裝好了
@@ -28,11 +28,24 @@ Rust（Tauri 2）＋ 靜態 HTML 的桌面 app，讀資料夾裡的 `<民國7碼
 `docs/worklog-rules.md` 是用 `include_str!` 在編譯期嵌進 binary 的（`store.rs` 的 `RULES_DOC`），
 所以：那個檔案**不能搬走或改名**，而且改完內容要重新編譯才會變成新的預設。
 
+## 狀態表是動態的
+
+內建八個是 `model.rs` 的 `STATUSES`（const），但使用者可以在看板加自己的狀態，整張表存在
+設定目錄的 `statuses.json`。`main.rs` 開機時 `model::set_table(store::load_statuses())` 灌進去，
+之後 `status_by_id()` / `status_by_zh()` / `status_table()` 查的都是那張動態表——**不要再直接讀
+`STATUSES` const**，那只是預設值（`builtin_table()` 用它，`merge_builtin()` 負責把缺的補回來）。
+
+沒灌之前就是內建那八個，所以測試不必碰使用者的設定檔；`examples/` 裡的工具要自己灌一次，
+不然使用者自訂的標籤會被當成看不懂的行。
+
+新增狀態會問要不要同步到 `~/.claude/CLAUDE.md` 的規則（`insert_status_into_rules()` 是純函式，
+只動生命週期那行與狀態表格，有測試）。一樣是**使用者按了才寫**。
+
 ## 設定頁的「日誌規則」會改使用者的 CLAUDE.md
 
 那一區編輯的是 `~/.claude/CLAUDE.md` 裡「# 每日工作日誌」那一段——Claude Code 真正會讀的地方。
 寫入邏輯在 `store.rs`：`replace_rules_section()` 是純函式（整份文字 + 新規則 → 新的整份文字），
-只換那一段、其他內容一個字都不動，寫之前先備份成 `CLAUDE.md.bak-<民國7碼>-<時分秒>`。
+只換那一段、其他內容一個字都不動，寫之前先備份成 `CLAUDE.md.bak-<西元8碼>-<時分秒>`。
 **只有使用者按按鈕才會寫**，不要加任何自動寫入。段落取代的測試不准碰真的 `~/.claude/CLAUDE.md`。
 
 這份文件是給 Claude 看的，**app 不會照它改變解析行為**，使用者在那裡改了規則不等於 `parser.rs` 跟著變。
@@ -58,10 +71,21 @@ cargo build --release
 pkill -f 'worklog-app' || true
 cp target/release/worklog-app "/Applications/每日工作日誌.app/Contents/MacOS/worklog-app"
 codesign --force --deep --sign - "/Applications/每日工作日誌.app"
+open "/Applications/每日工作日誌.app"          # ← 這行不能省
 ```
 
+**最後那行 `open` 是步驟的一部分，不是可選的。** 前面的 `pkill` 把使用者正在用的視窗關掉了，
+不開回來的話他桌上只剩被關掉前的印象，會以為改動沒生效——而且沒辦法驗收。
+（這個坑踩過：連續幾輪都有正確安裝，但每輪都把 app 殺掉不開回來，使用者看到的一直是舊畫面。）
+
 要重新產生整個 `.app`（換圖示、改版本、發 Release）才用 `cargo tauri build --bundles app`。
-驗證裝對了沒：比對 `shasum` 或看 `ls -l` 的時間，別靠感覺。
+驗證裝對了沒：看跑起來的是不是剛裝的那個執行檔，別靠感覺——
+
+```sh
+PID=$(pgrep -f worklog-app | head -1)
+ps -p "$PID" -o comm=            # 路徑要是 /Applications/… 那個
+ls -l "$(ps -p "$PID" -o comm=)" # 時間要是剛才那一分鐘
+```
 安裝到 `/Applications` 的步驟看 `README.md` 的「打包與安裝」，
 **換掉 binary 之後一定要 `codesign --force --deep --sign -` 重簽，不然 app 打不開**。
 

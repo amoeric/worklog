@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::model::StatusDto;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     /// 要讀哪個資料夾的 .md
@@ -66,6 +68,10 @@ fn todos_path() -> Result<PathBuf> {
     Ok(config_dir()?.join("todos.json"))
 }
 
+fn statuses_path() -> Result<PathBuf> {
+    Ok(config_dir()?.join("statuses.json"))
+}
+
 pub fn load_settings() -> Settings {
     let path = match settings_path() {
         Ok(p) => p,
@@ -80,6 +86,121 @@ pub fn load_settings() -> Settings {
 pub fn save_settings(s: &Settings) -> Result<()> {
     let path = settings_path()?;
     let text = serde_json::to_string_pretty(s)?;
+    std::fs::write(&path, text).with_context(|| format!("寫入失敗：{}", path.display()))?;
+    Ok(())
+}
+
+/* ---------- 狀態表 ----------
+   內建八個寫死在 `model.rs`，使用者還能自己加。存下來的是「整張表」——
+   順序就是看板欄序，所以新增的狀態插在哪裡也一併記住了。 */
+
+/// 讀狀態表。檔案不在、壞掉、或少了內建的狀態，都補回內建那八個，
+/// 不然日誌裡既有的標籤會突然變成不認得的字。
+pub fn load_statuses() -> Vec<StatusDto> {
+    let path = match statuses_path() {
+        Ok(p) => p,
+        Err(_) => return crate::model::builtin_table(),
+    };
+    let saved: Vec<StatusDto> = match std::fs::read_to_string(&path) {
+        Ok(text) => serde_json::from_str(&text).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    merge_builtin(saved)
+}
+
+/// 存下來的表補上缺的內建狀態：內建的照原順序排在最前面補進去，
+/// 使用者自己排的位置不動。
+fn merge_builtin(saved: Vec<StatusDto>) -> Vec<StatusDto> {
+    let builtin = crate::model::builtin_table();
+    if saved.is_empty() {
+        return builtin;
+    }
+    let mut out = saved;
+    for (i, b) in builtin.into_iter().enumerate() {
+        if !out.iter().any(|s| s.id == b.id) {
+            let at = i.min(out.len());
+            out.insert(at, b);
+        }
+    }
+    out
+}
+
+/// 把一個新狀態寫進規則本文：狀態表加一列，生命週期那行也插進去。
+///
+/// 純函式（整份規則 + 新狀態 → 新的整份規則），只動這兩處，其他一個字都不改。
+/// `after_zh` 是插在哪個狀態後面；空字串或找不到就排到最後。
+pub fn insert_status_into_rules(rules: &str, zh: &str, hint: &str, after_zh: &str) -> String {
+    let arrow = " → ";
+    let mut out: Vec<String> = Vec::new();
+    let mut table_done = false;
+    let mut last_row: Option<usize> = None;
+
+    for line in rules.lines() {
+        let trimmed = line.trim();
+
+        // 1. 生命週期那行
+        if trimmed.contains(arrow) && !trimmed.starts_with('|') {
+            out.push(insert_into_flow(line, zh, after_zh, arrow));
+            continue;
+        }
+
+        // 2. 狀態表：`| \`標籤\` | 意思 |`
+        if trimmed.starts_with("| `") {
+            out.push(line.to_string());
+            last_row = Some(out.len() - 1);
+            if !table_done && row_label(trimmed).as_deref() == Some(after_zh) {
+                out.push(format!("| `{}` | {} |", zh, hint));
+                table_done = true;
+            }
+            continue;
+        }
+
+        out.push(line.to_string());
+    }
+
+    // 沒插到（after 是空的、或表裡沒有那一列）就補在最後一列後面
+    if !table_done {
+        if let Some(i) = last_row {
+            out.insert(i + 1, format!("| `{}` | {} |", zh, hint));
+        }
+    }
+
+    let mut text = out.join("\n");
+    if rules.ends_with('\n') {
+        text.push('\n');
+    }
+    text
+}
+
+/// `| \`待辦\` | 只有議題… |` → `待辦`
+fn row_label(line: &str) -> Option<String> {
+    let rest = line.strip_prefix("| `")?;
+    let end = rest.find('`')?;
+    Some(rest[..end].trim().to_string())
+}
+
+/// 生命週期那行：`待辦 → 提案中 → 暫存 或 實作中 → …`
+///
+/// 找到含 `after_zh` 的那一段，插在它後面。找不到就不動——
+/// 使用者把新狀態接在 `完成` 後面時就是這種情況（`完成` 本來就不在流程軌上）。
+fn insert_into_flow(line: &str, zh: &str, after_zh: &str, arrow: &str) -> String {
+    if after_zh.is_empty() {
+        return line.to_string();
+    }
+    let mut parts: Vec<String> = line.split(arrow).map(|p| p.to_string()).collect();
+    let at = parts.iter().position(|p| p.contains(after_zh));
+    match at {
+        Some(i) => {
+            parts.insert(i + 1, zh.to_string());
+            parts.join(arrow)
+        }
+        None => line.to_string(),
+    }
+}
+
+pub fn save_statuses(list: &[StatusDto]) -> Result<()> {
+    let path = statuses_path()?;
+    let text = serde_json::to_string_pretty(list)?;
     std::fs::write(&path, text).with_context(|| format!("寫入失敗：{}", path.display()))?;
     Ok(())
 }
@@ -406,5 +527,47 @@ mod tests {
     fn default_folder_points_at_the_worklog_vault() {
         let f = default_folder();
         assert!(f.ends_with("每日工作日誌"), "預設路徑怪怪的：{}", f);
+    }
+
+    /* ---------- 把新狀態寫進規則 ---------- */
+
+    const FLOW: &str = "Spectra change 的生命週期：待辦 → 提案中 → 暫存 或 實作中 → 測試中 → 待合併 → 已歸檔\n\n| 標籤 | 意思 |\n| --- | --- |\n| `待辦` | 只有議題 |\n| `測試中` | 等驗證 |\n| `已歸檔` | 結束了 |\n| `完成` | 一次性工作 |\n";
+
+    #[test]
+    fn inserting_a_status_updates_both_the_flow_line_and_the_table() {
+        let out = insert_status_into_rules(FLOW, "驗收中", "等對方確認", "測試中");
+        assert!(
+            out.contains("測試中 → 驗收中 → 待合併"),
+            "生命週期那行沒插對：{}",
+            out.lines().next().unwrap()
+        );
+        assert!(out.contains("| `驗收中` | 等對方確認 |"));
+        // 插在該列後面，不是檔尾
+        let rows: Vec<&str> = out.lines().filter(|l| l.starts_with("| `")).collect();
+        assert_eq!(rows[1], "| `測試中` | 等驗證 |");
+        assert_eq!(rows[2], "| `驗收中` | 等對方確認 |");
+    }
+
+    #[test]
+    fn a_status_after_done_only_touches_the_table() {
+        let out = insert_status_into_rules(FLOW, "取消", "不做了", "完成");
+        assert!(out.lines().next().unwrap().ends_with("已歸檔"), "流程軌不該被動到");
+        assert!(out.trim_end().ends_with("| `取消` | 不做了 |"));
+    }
+
+    #[test]
+    fn an_unknown_anchor_puts_the_row_last() {
+        let out = insert_status_into_rules(FLOW, "擱置", "先放著", "");
+        assert!(out.lines().next().unwrap().ends_with("已歸檔"));
+        assert!(out.trim_end().ends_with("| `擱置` | 先放著 |"));
+    }
+
+    #[test]
+    fn inserting_a_status_changes_nothing_else() {
+        let out = insert_status_into_rules(FLOW, "驗收中", "等對方確認", "測試中");
+        assert_eq!(out.lines().count(), FLOW.lines().count() + 1);
+        for line in ["| 標籤 | 意思 |", "| --- | --- |", "| `已歸檔` | 結束了 |"] {
+            assert!(out.contains(line), "原本的行不見了：{}", line);
+        }
     }
 }

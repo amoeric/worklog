@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>狀態清單 — 每日工作日誌</title>
+<link href="css/fonts.css" rel="stylesheet">
+<link href="css/app.css" rel="stylesheet">
+<script src="vendor/tailwind.js"></script>
+<script src="js/tailwind-config.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/store.js"></script>
+<script src="js/shell.js"></script>
+</head>
+<body class="flex h-screen flex-col overflow-hidden bg-paper text-ink antialiased dark:bg-dpaper dark:text-dink font-sans text-base" data-od-id="status-page">
+
+<div data-shell="topbar" data-tab="board.html" data-crumb="狀態"></div>
+
+<div class="flex min-h-0 flex-1 flex-col">
+
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pb-3 pt-4 md:px-6" data-od-id="status-toolbar">
+    <a id="to-board" href="board.html" class="shrink-0 rounded-full border border-line bg-surface px-3 py-1.5 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft">回看板</a>
+    <h1 class="flex min-w-0 shrink-0 items-center gap-2.5" data-od-id="status-title">
+      <span id="dot" class="h-3 w-3 shrink-0 rounded-full"></span>
+      <span id="title" class="font-display truncate text-3xl font-bold tracking-tightest md:text-4xl"></span>
+    </h1>
+    <span id="hint" class="min-w-0 shrink truncate self-end pb-1 text-muted dark:text-dmuted"></span>
+    <span id="count" class="ml-auto shrink-0 tabular-nums text-muted dark:text-dmuted"></span>
+  </div>
+
+  <!-- 這一頁看的是哪個範圍 -->
+  <div class="px-4 pb-3 md:px-6" data-od-id="status-scope">
+    <div id="scope" class="inline-flex items-center gap-0.5 rounded-full bg-accentsoft p-1 dark:bg-daccentsoft"></div>
+  </div>
+
+  <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-10 md:px-6">
+    <div id="list" class="w-full"></div>
+  </div>
+</div>
+
+<script>
+window.Log.ready(function () {
+  var L = window.Log;
+  var params = new URLSearchParams(location.search);
+
+  var statusId = params.get('s') || '';
+  if (!L.statusById(statusId)) {
+    var first = L.statuses()[0];
+    statusId = first ? first.id : '';
+  }
+
+  /* 從「某一天」的看板點進來就只看那一天，跟看板的範圍對齊 */
+  var day = params.get('d');
+  if (day && !/^\d{8}$/.test(day)) day = null;
+  var scope = day ? 'day' : 'all';
+  var query = (window.Shell && window.Shell.searchQuery && window.Shell.searchQuery()) || '';
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  /* 那一天有推進到的工作項目 */
+  function touchedOn(code) {
+    var ids = {};
+    L.entriesOf(code).forEach(function (e) { if (e.item) ids[e.item] = true; });
+    return ids;
+  }
+
+  function visibleItems() {
+    var all = L.allItems().filter(function (it) { return it.status === statusId; });
+    if (scope === 'day' && day) {
+      var ids = touchedOn(day);
+      all = all.filter(function (it) { return ids[it.id]; });
+    }
+    all = all.filter(function (it) { return L.matchesSearch(L.itemSearchFields(it), query); });
+    /* 最近進入這個狀態的排前面 */
+    return all.sort(function (a, b) { return a.since < b.since ? 1 : a.since > b.since ? -1 : 0; });
+  }
+
+  function linkTag(href) {
+    return '<a href="' + esc(href) + '" target="_blank" rel="noopener" title="' + esc(L.linkLabel(href)) + '" ' +
+      'class="inline-flex shrink-0 items-center rounded-full bg-accentsoft px-2 py-0.5 leading-tight text-muted hover:text-ink dark:bg-daccentsoft dark:text-dmuted dark:hover:text-dink">' +
+      esc(L.kindLabel(L.detectKind(href))) + '</a>';
+  }
+
+  function row(it) {
+    var links = (it.issue ? linkTag(it.issue) : '') + (it.mr ? linkTag(it.mr) : '');
+    return '' +
+      '<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1.5 border-b border-line px-1 py-3 last:border-0 dark:border-dline" data-od-id="status-row">' +
+        '<a href="' + rowHref(it) + '" class="min-w-0 flex-1 leading-snug underline-offset-4 hover:underline">' + esc(it.title) + '</a>' +
+        '<span class="shrink-0 font-mono text-muted dark:text-dmuted">' + esc(it.project) + '</span>' +
+        '<span class="shrink-0 tabular-nums text-muted dark:text-dmuted">' + esc(L.shortLabel(it.since)) + '　' + esc(L.stayLabel(it.since)) + '</span>' +
+        (links ? '<span class="flex shrink-0 flex-wrap gap-2">' + links + '</span>' : '') +
+      '</div>';
+  }
+
+  function rowHref(it) {
+    var url = 'work-item.html?id=' + encodeURIComponent(it.id) + (day ? '&d=' + day : '');
+    return window.Shell && window.Shell.withSearch ? window.Shell.withSearch(url) : url;
+  }
+
+  function empty() {
+    var st = L.statusById(statusId);
+    var what = st ? '「' + esc(st.zh) + '」' : '這個狀態';
+    var why = query
+      ? '沒有符合關鍵字的項目。'
+      : scope === 'day'
+        ? esc(L.fileName(day)) + ' 這天沒有推進到' + what + '的項目。'
+        : '目前沒有' + what + '的項目。';
+    return '<p class="px-1 py-6 text-muted dark:text-dmuted">' + why + '</p>';
+  }
+
+  /* 全部／某一天，跟看板同一組選項 */
+  function renderScope() {
+    var box = document.getElementById('scope');
+    var opts = [
+      { id: 'all', label: '全部項目' },
+      { id: 'day', label: day ? L.shortLabel(day) : '某一天' },
+    ];
+    box.innerHTML = opts.map(function (o) {
+      var on = scope === o.id;
+      var cls = on
+        ? 'rounded-full bg-surface px-3 py-1 leading-tight shadow-sm dark:bg-dsurface'
+        : 'rounded-full px-3 py-1 leading-tight text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink';
+      var off = o.id === 'day' && !day;
+      return '<button data-scope="' + o.id + '" class="' + cls + (off ? ' opacity-40' : '') + '"' +
+        (off ? ' disabled' : '') + '>' + esc(o.label) + '</button>';
+    }).join('');
+    box.querySelectorAll('[data-scope]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        scope = b.getAttribute('data-scope');
+        render();
+      });
+    });
+  }
+
+  function render() {
+    var st = L.statusById(statusId);
+    var items = visibleItems();
+
+    document.getElementById('dot').className = 'h-3 w-3 shrink-0 rounded-full ' + L.statusDotClass(statusId);
+    document.getElementById('title').textContent = st ? st.zh : '找不到這個狀態';
+    document.getElementById('hint').textContent = st ? st.hint : '';
+    document.getElementById('count').textContent = items.length + ' 件';
+
+    var crumb = document.querySelector('[data-od-id="crumb"]');
+    if (crumb) crumb.textContent = '狀態　' + (st ? st.zh : '');
+
+    document.getElementById('list').innerHTML = items.length
+      ? items.map(row).join('')
+      : empty();
+
+    renderScope();
+
+    var back = 'board.html' + (day ? '?d=' + day : '');
+    document.getElementById('to-board').href =
+      window.Shell && window.Shell.withSearch ? window.Shell.withSearch(back) : back;
+
+    var url = 'status.html?s=' + encodeURIComponent(statusId) + (scope === 'day' && day ? '&d=' + day : '');
+    if (window.Shell && window.Shell.withSearch) url = window.Shell.withSearch(url);
+    try { history.replaceState(null, '', url); } catch (e) {}
+  }
+
+  document.addEventListener('worklog:search', function (e) {
+    query = e.detail || '';
+    render();
+  });
+
+  render();
+});
+</script>
+</body>
+</html>

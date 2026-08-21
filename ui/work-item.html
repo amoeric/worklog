@@ -37,7 +37,7 @@ window.Log.ready(function () {
 
   /* 從「某一天」的看板點進來，回去也要回到那一天 */
   var fromDay = params.get('d');
-  if (fromDay && /^\d{7}$/.test(fromDay)) {
+  if (fromDay && /^\d{8}$/.test(fromDay)) {
     document.getElementById('to-board').setAttribute('href', 'board.html?d=' + fromDay);
   }
 

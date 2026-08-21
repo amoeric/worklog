@@ -1,5 +1,5 @@
 /* 每日工作日誌 — 前端資料層
-   資料全部來自 Rust 後端：它讀設定資料夾裡的 <民國7碼>.md，解析後一次送過來。
+   資料全部來自 Rust 後端：它讀設定資料夾裡的 <年>/<月>/<西元8碼>.md，解析後一次送過來。
    會動到 .md 的只有兩件事：TODO 的 appendEntry()（往今天的檔案插一行），
    以及看板改狀態的 moveItem()（改今天那一行的狀態標籤，沒有就插一行）。
    TODO 存在 app 自己的設定目錄。
@@ -9,7 +9,7 @@
   var invoke = (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) || null;
   var listen = (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) || null;
 
-  /* ---------- 民國日期 ---------- */
+  /* ---------- 西元日期 ---------- */
   var WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'];
 
   function pad(n, w) {
@@ -19,22 +19,22 @@
   }
 
   function toCode(date) {
-    return String(date.getFullYear() - 1911) + pad(date.getMonth() + 1, 2) + pad(date.getDate(), 2);
+    return String(date.getFullYear()) + pad(date.getMonth() + 1, 2) + pad(date.getDate(), 2);
   }
 
   function toDate(code) {
     var s = String(code);
-    return new Date(Number(s.slice(0, 3)) + 1911, Number(s.slice(3, 5)) - 1, Number(s.slice(5, 7)));
+    return new Date(Number(s.slice(0, 4)), Number(s.slice(4, 6)) - 1, Number(s.slice(6, 8)));
   }
 
   function parts(code) {
     var s = String(code);
-    return { roc: Number(s.slice(0, 3)), month: Number(s.slice(3, 5)), day: Number(s.slice(5, 7)) };
+    return { year: Number(s.slice(0, 4)), month: Number(s.slice(4, 6)), day: Number(s.slice(6, 8)) };
   }
 
   function longLabel(code) {
     var p = parts(code);
-    return '民國' + p.roc + '年' + p.month + '月' + p.day + '日 星期' + WEEKDAYS[toDate(code).getDay()];
+    return p.year + '年' + p.month + '月' + p.day + '日 星期' + WEEKDAYS[toDate(code).getDay()];
   }
 
   function shortLabel(code) {
@@ -90,32 +90,34 @@
     return STATUSES.slice();
   }
 
-  function lifecycle() {
-    return STATUSES.filter(function (s) { return s.lifecycle; });
-  }
-
   /* 事件底色：淡色底、深色字；Archived 是終點，文字退成灰的 */
   function statusClass(id) {
-    if (!statusById(id)) return 'border-transparent bg-accentsoft text-muted dark:bg-daccentsoft dark:text-dmuted';
+    var s = statusById(id);
+    if (!s) return 'border-transparent bg-accentsoft text-muted dark:bg-daccentsoft dark:text-dmuted';
     var text = id === 'archived' ? 'text-muted dark:text-dmuted' : 'text-ink dark:text-dink';
+    if (s.color) return 'border-transparent stx-tint-' + id + ' ' + text;
     return 'border-transparent bg-st-' + id + '-tint ' + text + ' dark:bg-st-' + id + '-dtint';
   }
 
   /* 一整組後面墊的底，比事件底再淡一階 */
   function groupClass(id) {
-    if (!statusById(id)) return 'bg-accentsoft/50 dark:bg-daccentsoft/60';
+    var s = statusById(id);
+    if (!s) return 'bg-accentsoft/50 dark:bg-daccentsoft/60';
+    if (s.color) return 'stx-group-' + id;
     return 'bg-st-' + id + '-tint/50 dark:bg-st-' + id + '-dtint/60';
   }
 
   /* 行事曆事件左邊那顆實心圓點 */
   function statusDotClass(id) {
-    if (!statusById(id)) return 'bg-muted dark:bg-dmuted';
+    var s = statusById(id);
+    if (!s) return 'bg-muted dark:bg-dmuted';
+    if (s.color) return 'stx-dot-' + id;
     return 'bg-st-' + id + '-dot';
   }
 
   /* 行事曆裡的一列事件：圓點 + 名稱 + 數字 */
   function eventRow(id, label, count) {
-    var dot = id ? 'bg-st-' + id + '-dot' : 'bg-muted dark:bg-dmuted';
+    var dot = id ? statusDotClass(id) : 'bg-muted dark:bg-dmuted';
     var box = id
       ? statusClass(id)
       : 'border-transparent bg-accentsoft text-muted dark:bg-daccentsoft dark:text-dmuted';
@@ -341,7 +343,7 @@
     (ws.days || []).forEach(function (d) { DAYS[d.code] = d.entries; });
   }
 
-  /* 看板改狀態：後端直接寫進今天的 <民國7碼>.md，寫完把重讀的結果一起送回來。
+  /* 看板改狀態：後端直接寫進今天的 <年>/<月>/<西元8碼>.md，寫完把重讀的結果一起送回來。
      回傳的物件除了 workspace 還有 code / file / status_zh / updated / created / unchanged，
      呼叫端拿去講「已寫進 1150820.md：測試中」。寫不了（沒設資料夾、沒權限…）會 reject。 */
   function moveItem(itemId, statusId) {
@@ -413,7 +415,7 @@
     return '- ' + tag + body;
   }
 
-  /* 把一筆 TODO 真的寫進今天的 <民國7碼>.md。
+  /* 把一筆 TODO 真的寫進今天的 <年>/<月>/<西元8碼>.md。
      後端只會在對應的 `## 專案` 區塊插一行；一模一樣的行不會重複寫，
      這種情況回傳的 duplicate 是 true。 */
   function appendEntry(todo) {
@@ -500,9 +502,75 @@
     return listen(UPDATE_PROGRESS, function (e) { fn(e.payload || {}); });
   }
 
+
+  /* 自訂狀態的顏色。內建八個的色票寫在 tailwind-config.js，Tailwind 生得出
+     bg-st-<id>-dot 那些 class；使用者自己加的狀態不在設定裡，所以改用
+     stx-* 這組自備 class，開機與每次改狀態表時重畫一次。 */
+  function rgba(hex, a) {
+    var h = String(hex).replace('#', '');
+    if (h.length !== 6) return hex;
+    return 'rgba(' + parseInt(h.slice(0, 2), 16) + ',' + parseInt(h.slice(2, 4), 16) + ',' +
+      parseInt(h.slice(4, 6), 16) + ',' + a + ')';
+  }
+
+  function applyStatusColors() {
+    var css = '';
+    STATUSES.forEach(function (s) {
+      if (!s.color) return;
+      var c = s.color;
+      css += '.stx-dot-' + s.id + '{background-color:' + c.dot + '}';
+      css += '.stx-tint-' + s.id + '{background-color:' + c.tint + '}';
+      css += '.dark .stx-tint-' + s.id + '{background-color:' + c.dtint + '}';
+      css += '.stx-group-' + s.id + '{background-color:' + rgba(c.tint, 0.5) + '}';
+      css += '.dark .stx-group-' + s.id + '{background-color:' + rgba(c.dtint, 0.6) + '}';
+    });
+    var el = document.getElementById('stx-colors');
+    if (!el) {
+      el = document.createElement('style');
+      el.id = 'stx-colors';
+      document.head.appendChild(el);
+    }
+    el.textContent = css;
+  }
+
+  /* ---------- 自訂狀態 ----------
+     新增／刪除都由後端存進 statuses.json，回來的是整張新表（順序＝看板欄序）。*/
+  function setStatusTable(table) {
+    STATUSES = table || [];
+    applyStatusColors();
+  }
+
+  function addStatus(zh, hint, afterId) {
+    if (!invoke) return Promise.reject('不在 app 裡，沒辦法新增狀態');
+    return invoke('add_status', { zh: zh, hint: hint, afterId: afterId }).then(function (table) {
+      setStatusTable(table);
+      return table;
+    });
+  }
+
+  function deleteStatus(id) {
+    if (!invoke) return Promise.reject('不在 app 裡，沒辦法刪狀態');
+    return invoke('delete_status', { id: id }).then(function (table) {
+      setStatusTable(table);
+      return table;
+    });
+  }
+
+  /* 把新狀態插進日誌規則後的完整規則本文。只是預覽，還沒寫檔。 */
+  function rulesWithStatus(zh, hint, afterZh) {
+    if (!invoke) return Promise.reject('不在 app 裡');
+    return invoke('rules_with_status', { zh: zh, hint: hint, afterZh: afterZh });
+  }
+
+  /* 真的寫進 ~/.claude/CLAUDE.md（後端會先備份） */
+  function saveRules(text) {
+    if (!invoke) return Promise.reject('不在 app 裡');
+    return invoke('save_rules', { text: text });
+  }
+
   /* ---------- 開機 ---------- */
   function ingest(ws, table, todoList) {
-    STATUSES = table;
+    setStatusTable(table);
     TODOS = todoList || [];
     setWorkspace(ws);
   }
@@ -555,7 +623,6 @@
   window.Log = {
     WEEKDAYS: WEEKDAYS,
     statuses: statuses,
-    lifecycle: lifecycle,
     pad: pad,
     toCode: toCode,
     toDate: toDate,
@@ -575,6 +642,10 @@
     groupClass: groupClass,
     eventRow: eventRow,
     statusDotClass: statusDotClass,
+    addStatus: addStatus,
+    deleteStatus: deleteStatus,
+    rulesWithStatus: rulesWithStatus,
+    saveRules: saveRules,
     searchTerms: searchTerms,
     matchesSearch: matchesSearch,
     entrySearchFields: entrySearchFields,

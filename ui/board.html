@@ -24,6 +24,13 @@
   /* 窄軌上的狀態名直著寫 */
   .rail-name { writing-mode: vertical-rl; }
 
+  /* 小視窗進場：跟 macOS 一樣，淡入帶一點點放大，很快就停 */
+  @keyframes sheet-in { from { opacity: 0; transform: translateY(6px) scale(.98); } to { opacity: 1; transform: none; } }
+  @keyframes veil-in  { from { opacity: 0; } to { opacity: 1; } }
+  .sheet { animation: sheet-in .16s ease-out; }
+  .veil  { animation: veil-in .16s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .sheet, .veil { animation: none; } }
+
   /* WebKit 的老問題：光有 draggable="true" 在 WKWebView 裡拖不動，
      要明講這個元素本身可以被拖。卡片裡的連結與按鈕則要關掉，
      不然從標題按下去會變成拖那條連結，卡片反而不動。 */
@@ -80,7 +87,7 @@ window.Log.ready(function () {
   var L = window.Log;
   var params = new URLSearchParams(location.search);
   var day = params.get('d');
-  if (day && !/^\d{7}$/.test(day)) day = null;
+  if (day && !/^\d{8}$/.test(day)) day = null;
   var scope = day ? 'day' : 'all';
 
   /* 搜尋：關鍵字由工具列的搜尋框管，看板只負責過濾卡片。
@@ -139,7 +146,7 @@ window.Log.ready(function () {
   /* 移動到…：卡片右上角那顆按鈕點開的中文狀態清單。
      跟拖曳做同一件事，但觸控沒有拖曳，這條路一定要留著。 */
   function moveMenu(item) {
-    var opts = L.lifecycle().map(function (s) {
+    var opts = L.statuses().map(function (s) {
       var on = s.id === item.status;
       return '<button type="button" data-move-to="' + s.id + '" ' +
         'class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left leading-tight ' +
@@ -190,14 +197,24 @@ window.Log.ready(function () {
       '</div>';
   }
 
-  /* 欄頭只講一次事情：圓點 + 中文狀態名 + 數字，不再放英文藥丸 */
+  /* 欄頭只講一次事情：圓點 + 中文狀態名 + 數字，不再放英文藥丸。
+     自己加的狀態右邊多一個刪除鈕（內建八個沒有）。 */
   function columnHead(st, n) {
     var dim = st.id === 'archived' ? ' text-muted dark:text-dmuted' : '';
+    var del = st.builtin ? '' :
+      '<button data-del-status="' + st.id + '" title="刪掉這個狀態" aria-label="刪掉狀態 ' + esc(st.zh) + '" ' +
+      'class="grid h-5 w-5 shrink-0 place-items-center rounded-full text-muted opacity-0 hover:bg-accentsoft hover:text-ink group-hover/col:opacity-100 dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink">' +
+        '<svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>' +
+      '</button>';
     return '' +
       '<div class="flex shrink-0 items-center gap-2 px-1 pb-2">' +
-        '<span class="h-2 w-2 shrink-0 rounded-full ' + L.statusDotClass(st.id) + '"></span>' +
-        '<span class="min-w-0 flex-1 truncate font-medium' + dim + '">' + esc(L.statusText(st.id)) + '</span>' +
-        '<span class="shrink-0 tabular-nums text-muted dark:text-dmuted">' + n + '</span>' +
+        '<button data-open-status="' + st.id + '" title="看「' + esc(st.zh) + '」的所有項目" ' +
+        'class="-mx-1 flex min-w-0 flex-1 items-center gap-2 rounded-md px-1 py-0.5 text-left hover:bg-black/5 dark:hover:bg-white/10">' +
+          '<span class="h-2 w-2 shrink-0 rounded-full ' + L.statusDotClass(st.id) + '"></span>' +
+          '<span class="min-w-0 flex-1 truncate font-medium' + dim + '">' + esc(L.statusText(st.id)) + '</span>' +
+          '<span class="shrink-0 tabular-nums text-muted dark:text-dmuted">' + n + '</span>' +
+        '</button>' +
+        del +
       '</div>';
   }
 
@@ -211,7 +228,7 @@ window.Log.ready(function () {
       '</div>';
   }
 
-  var COL = 'flex h-full flex-col rounded-xl border border-line p-2 dark:border-dline ';
+  var COL = 'group/col flex h-full flex-col rounded-xl border border-line p-2 dark:border-dline ';
 
   function column(st, items) {
     /* 0 件的欄收成窄軌：只留圓點、0 與直排的狀態名，寬度讓給真正在看的欄。
@@ -220,11 +237,12 @@ window.Log.ready(function () {
       return '' +
         '<section data-drop="' + st.id + '" data-col="rail" data-od-id="column-' + st.id + '" ' +
         'class="' + COL + 'overflow-hidden ' + L.groupClass(st.id) + '">' +
-          '<div data-rail class="flex min-h-0 flex-1 flex-col items-center gap-2 pt-1">' +
+          '<button data-rail data-open-status="' + st.id + '" title="看「' + esc(st.zh) + '」的所有項目" ' +
+          'class="flex min-h-0 flex-1 flex-col items-center gap-2 rounded-md pt-1 hover:bg-black/5 dark:hover:bg-white/10">' +
             '<span class="h-2 w-2 shrink-0 rounded-full ' + L.statusDotClass(st.id) + '"></span>' +
             '<span class="shrink-0 tabular-nums text-muted dark:text-dmuted">0</span>' +
             '<span class="rail-name min-h-0 flex-1 overflow-hidden text-muted dark:text-dmuted">' + esc(L.statusText(st.id)) + '</span>' +
-          '</div>' +
+          '</button>' +
           '<div data-full class="min-h-0 flex-1 flex-col">' + columnBody(st, items) + '</div>' +
         '</section>';
     }
@@ -516,9 +534,22 @@ window.Log.ready(function () {
   btnLeft.addEventListener('click', function () { scrollByColumn(-1); });
   btnRight.addEventListener('click', function () { scrollByColumn(1); });
 
-  /* 滑鼠只有直向滾輪，把它轉成橫捲；觸控板本來就會橫捲，那種就別攔 */
+  /* 滑鼠只有直向滾輪，把它轉成橫捲；觸控板本來就會橫捲，那種就別攔。
+     但指標停在某一欄的卡片清單上、而且那一欄自己還捲得動的時候，
+     直向滾輪就是要捲那一欄——卡片多的時候不然會看不到下面的卡。
+     捲到那一欄的頭或底了才把滾輪還給橫捲。 */
+  function canScrollList(el, down) {
+    if (!el) return false;
+    if (el.scrollHeight - el.clientHeight <= 1) return false;
+    return down
+      ? el.scrollTop + el.clientHeight < el.scrollHeight - 1
+      : el.scrollTop > 0;
+  }
+
   scroller.addEventListener('wheel', function (e) {
     if (e.deltaX !== 0 || e.shiftKey) return;
+    var list = e.target.closest ? e.target.closest('[data-list]') : null;
+    if (canScrollList(list, e.deltaY > 0)) return;
     var max = scroller.scrollWidth - scroller.clientWidth;
     if (max <= 4) return;
     e.preventDefault();
@@ -533,15 +564,15 @@ window.Log.ready(function () {
   function renderCal() {
     var cur = day || L.today();
     var p = L.parts(cur);
-    if (!calMonth) calMonth = { roc: p.roc, month: p.month };
-    var year = calMonth.roc + 1911;
+    if (!calMonth) calMonth = { year: p.year, month: p.month };
+    var year = calMonth.year;
     var days = new Date(year, calMonth.month, 0).getDate();
     var lead = new Date(year, calMonth.month - 1, 1).getDay();
 
     var cells = '';
     for (var i = 0; i < lead; i++) cells += '<span></span>';
     for (var d = 1; d <= days; d++) {
-      var code = String(calMonth.roc) + L.pad(calMonth.month, 2) + L.pad(d, 2);
+      var code = String(calMonth.year) + L.pad(calMonth.month, 2) + L.pad(d, 2);
       var n = L.countOf(code);
       var isCur = code === cur;
       var cls = isCur
@@ -557,7 +588,7 @@ window.Log.ready(function () {
     calPop.innerHTML = '' +
       '<div class="mb-2 flex items-center gap-2">' +
         '<button data-cal="-1" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="上個月">‹</button>' +
-        '<span class="flex-1 text-center font-semibold tabular-nums">民國' + calMonth.roc + '年 ' + calMonth.month + '月</span>' +
+        '<span class="flex-1 text-center font-semibold tabular-nums">' + calMonth.year + '年 ' + calMonth.month + '月</span>' +
         '<button data-cal="1" class="grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink" aria-label="下個月">›</button>' +
       '</div>' +
       '<div class="grid grid-cols-7 gap-0.5 text-center text-muted dark:text-dmuted">' +
@@ -570,10 +601,10 @@ window.Log.ready(function () {
       b.addEventListener('click', function (e) {
         e.stopPropagation();
         var m = calMonth.month + Number(b.getAttribute('data-cal'));
-        var y = calMonth.roc;
+        var y = calMonth.year;
         if (m < 1) { m = 12; y -= 1; }
         if (m > 12) { m = 1; y += 1; }
-        calMonth = { roc: y, month: m };
+        calMonth = { year: y, month: m };
         renderCal();
       });
     });
@@ -617,12 +648,209 @@ window.Log.ready(function () {
     if (e.key === 'Escape') { closeCal(); closeMenus(null); }
   });
 
+  /* ---------- 新增狀態 ----------
+     看板最右邊那一欄是入口。加出來的狀態跟內建的一樣：有自己的欄、
+     卡片拖得進去、寫進日誌檔的就是它的中文標籤。 */
+
+  function addColumn() {
+    return '' +
+      '<section data-col="add" data-od-id="column-add" ' +
+      'class="' + COL + 'w-12 shrink-0 border-dashed">' +
+        '<button id="btn-add-status" title="新增狀態" ' +
+        'class="flex h-full w-full flex-col items-center gap-2 pt-1 text-muted hover:text-ink dark:text-dmuted dark:hover:text-dink">' +
+          '<span class="shrink-0 text-lg leading-none">＋</span>' +
+          '<span class="rail-name min-h-0 flex-1 overflow-hidden">新增狀態</span>' +
+        '</button>' +
+      '</section>';
+  }
+
+  /* 自己蓋一個小視窗。不用 alert／confirm——那會把整個 WebView 卡住。 */
+  function modal(inner) {
+    var el = document.createElement('div');
+    el.className = 'veil fixed inset-0 z-50 grid place-items-center bg-black/25 p-4 backdrop-blur-[3px] dark:bg-black/50';
+    el.innerHTML =
+      '<div class="sheet w-full max-w-[27rem] rounded-2xl border border-line bg-surface p-5 shadow-pop ring-1 ring-black/5 dark:border-dline dark:bg-dsurface dark:ring-white/5" role="dialog" aria-modal="true">' +
+        inner +
+      '</div>';
+    document.body.appendChild(el);
+    function close() { el.remove(); document.removeEventListener('keydown', onKey); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    el.addEventListener('click', function (e) { if (e.target === el) close(); });
+    document.addEventListener('keydown', onKey);
+    return { el: el, close: close };
+  }
+
+  /* 表單與按鈕沿用設定頁那一套，不要在這裡另創一種 */
+  var FIELD = 'mt-1.5 w-full rounded-lg border border-line bg-surface px-3 py-2 shadow-sm outline-none transition focus:border-muted focus:ring-4 focus:ring-accentsoft dark:border-dline dark:bg-dpaper dark:focus:border-dmuted dark:focus:ring-daccentsoft';
+  var LABEL = 'mt-3.5 block text-muted dark:text-dmuted';
+  var BTN = 'rounded-full border border-line bg-surface px-4 py-2 leading-tight shadow-sm hover:bg-accentsoft dark:border-dline dark:bg-dsurface dark:hover:bg-daccentsoft';
+  var BTN_GO = 'rounded-full bg-accent px-4 py-2 font-medium leading-tight text-white shadow-sm hover:opacity-90 disabled:opacity-40 dark:bg-daccent';
+  var TITLE = 'font-display text-xl font-bold tracking-tightest';
+  var SUB = 'mt-1.5 leading-snug text-muted dark:text-dmuted';
+  var ERR = 'mt-3 hidden leading-snug text-accent dark:text-daccent';
+  var FOOT = 'mt-5 flex justify-end gap-2';
+
+  function openAddStatus() {
+    var list = L.statuses();
+    var opts = list.map(function (s, i) {
+      var sel = i === list.length - 1 ? ' selected' : '';
+      return '<option value="' + s.id + '"' + sel + '>' + esc(s.zh) + '</option>';
+    }).join('');
+
+    var m = modal(
+      '<h2 class="' + TITLE + '">新增狀態</h2>' +
+      '<p class="' + SUB + '">看板會多一欄，卡片拖得進去。</p>' +
+      '<div class="mt-3 rounded-lg border border-line bg-paper px-3 py-2 font-mono text-sm text-muted dark:border-dline dark:bg-dpaper dark:text-dmuted">' +
+        '- <span class="text-ink dark:text-dink">`<span id="ns-pv">驗收中</span>`</span> 某件事' +
+      '</div>' +
+      '<label class="' + LABEL + '">名稱' +
+        '<input id="ns-zh" class="' + FIELD + ' text-ink dark:text-dink" placeholder="驗收中" maxlength="8">' +
+      '</label>' +
+      '<label class="' + LABEL + '">一句說明' +
+        '<input id="ns-hint" class="' + FIELD + ' text-ink dark:text-dink" placeholder="等對方確認">' +
+      '</label>' +
+      '<label class="' + LABEL + '">插在哪一欄後面' +
+        '<select id="ns-after" class="' + FIELD + ' text-ink dark:text-dink">' + opts + '</select>' +
+      '</label>' +
+      '<p id="ns-err" class="' + ERR + '"></p>' +
+      '<div class="' + FOOT + '">' +
+        '<button id="ns-cancel" class="' + BTN + '">取消</button>' +
+        '<button id="ns-go" class="' + BTN_GO + '">新增</button>' +
+      '</div>'
+    );
+
+    var zhEl = m.el.querySelector('#ns-zh');
+    var hintEl = m.el.querySelector('#ns-hint');
+    var afterEl = m.el.querySelector('#ns-after');
+    var errEl = m.el.querySelector('#ns-err');
+    var pvEl = m.el.querySelector('#ns-pv');
+    zhEl.addEventListener('input', function () {
+      pvEl.textContent = zhEl.value.trim() || '驗收中';
+    });
+    zhEl.focus();
+
+    function fail(msg) {
+      errEl.textContent = msg;
+      errEl.classList.remove('hidden');
+    }
+
+    function go() {
+      var zh = zhEl.value.trim();
+      var hint = hintEl.value.trim();
+      var afterId = afterEl.value;
+      var afterZh = (L.statusById(afterId) || {}).zh || '';
+      if (!zh) { fail('名稱不能空白'); return; }
+      L.addStatus(zh, hint, afterId).then(function () {
+        m.close();
+        render();
+        say('已新增狀態：' + zh);
+        openRulesSync(zh, hint, afterZh);
+      }).catch(function (e) { fail(String((e && e.message) || e)); });
+    }
+
+    m.el.querySelector('#ns-cancel').addEventListener('click', m.close);
+    m.el.querySelector('#ns-go').addEventListener('click', go);
+    m.el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && !e.isComposing) go();
+    });
+  }
+
+  /* 新增完問一次要不要同步規則。
+     不同步的話 Claude 不知道有這個狀態，寫日誌就不會用它——所以問，但不自己寫。 */
+  function openRulesSync(zh, hint, afterZh) {
+    var where = afterZh ? '接在「' + afterZh + '」後面' : '排在最後';
+    var m = modal(
+      '<h2 class="' + TITLE + '">要把「' + esc(zh) + '」寫進日誌規則嗎？</h2>' +
+      '<p class="' + SUB + '">規則在 <span class="font-mono">~/.claude/CLAUDE.md</span>，是 Claude 寫日誌時看的。' +
+        '不寫進去的話，看板認得這個狀態，但 Claude 不會用它。</p>' +
+      '<p class="' + SUB + '">生命週期裡' + esc(where) + '，狀態表也會多一列。寫之前會先備份。</p>' +
+      '<pre id="rs-text" class="mt-4 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-line bg-paper p-3 font-mono text-sm leading-relaxed text-muted dark:border-dline dark:bg-dpaper dark:text-dmuted">讀取中…</pre>' +
+      '<p id="rs-err" class="' + ERR + '"></p>' +
+      '<div class="' + FOOT + '">' +
+        '<button id="rs-skip" class="' + BTN + '">先不要</button>' +
+        '<button id="rs-go" class="' + BTN_GO + '">寫進規則</button>' +
+      '</div>'
+    );
+
+    var pre = m.el.querySelector('#rs-text');
+    var errEl = m.el.querySelector('#rs-err');
+    var goBtn = m.el.querySelector('#rs-go');
+    var next = '';
+
+    L.rulesWithStatus(zh, hint, afterZh).then(function (r) {
+      next = r.text;
+      pre.textContent = next;
+    }).catch(function (e) {
+      pre.textContent = '';
+      errEl.textContent = String((e && e.message) || e);
+      errEl.classList.remove('hidden');
+      goBtn.disabled = true;
+    });
+
+    m.el.querySelector('#rs-skip').addEventListener('click', m.close);
+    goBtn.addEventListener('click', function () {
+      if (!next) return;
+      goBtn.disabled = true;
+      L.saveRules(next).then(function (r) {
+        m.close();
+        say(r.backup ? '規則已更新，備份在 ' + r.backup : '規則已更新');
+      }).catch(function (e) {
+        goBtn.disabled = false;
+        errEl.textContent = String((e && e.message) || e);
+        errEl.classList.remove('hidden');
+      });
+    });
+  }
+
+  function askDeleteStatus(id) {
+    var st = L.statusById(id);
+    if (!st) return;
+    var m = modal(
+      '<h2 class="' + TITLE + '">刪掉狀態「' + esc(st.zh) + '」？</h2>' +
+      '<p class="' + SUB + '">看板少一欄。日誌檔一個字都不會動——已經寫成這個標籤的行留在原地，只是 app 之後不認得它。</p>' +
+      '<p class="' + SUB + '">日誌規則裡那一列要不要拿掉，得自己去設定頁改。</p>' +
+      '<p id="ds-err" class="' + ERR + '"></p>' +
+      '<div class="' + FOOT + '">' +
+        '<button id="ds-cancel" class="' + BTN + '">取消</button>' +
+        '<button id="ds-go" class="' + BTN_GO + '">刪掉</button>' +
+      '</div>'
+    );
+
+    m.el.querySelector('#ds-cancel').addEventListener('click', m.close);
+    m.el.querySelector('#ds-go').addEventListener('click', function () {
+      L.deleteStatus(id).then(function () {
+        m.close();
+        render();
+        say('已刪掉狀態：' + st.zh);
+      }).catch(function (e) {
+        var errEl = m.el.querySelector('#ds-err');
+        errEl.textContent = String((e && e.message) || e);
+        errEl.classList.remove('hidden');
+      });
+    });
+  }
+
+  document.addEventListener('click', function (e) {
+    var add = e.target.closest && e.target.closest('#btn-add-status');
+    if (add) { openAddStatus(); return; }
+    var head = e.target.closest && e.target.closest('[data-open-status]');
+    if (head) {
+      var url = 'status.html?s=' + encodeURIComponent(head.getAttribute('data-open-status')) +
+        (scope === 'day' && day ? '&d=' + day : '');
+      if (window.Shell && window.Shell.withSearch) url = window.Shell.withSearch(url);
+      location.href = url;
+      return;
+    }
+    var del = e.target.closest && e.target.closest('[data-del-status]');
+    if (del) { e.stopPropagation(); askDeleteStatus(del.getAttribute('data-del-status')); }
+  });
+
   function render() {
     var items = visibleItems();
 
-    document.getElementById('columns').innerHTML = L.lifecycle().map(function (st) {
+    document.getElementById('columns').innerHTML = L.statuses().map(function (st) {
       return column(st, items.filter(function (it) { return it.status === st.id; }));
-    }).join('');
+    }).join('') + addColumn();
 
     /* 現在看的是哪一天，標題旁邊與麵包屑都要看得到 */
     var where = scope === 'day' && day
