@@ -116,6 +116,10 @@ pub struct Entry {
     pub url: Option<String>,
     /// 連結後面的括號補充
     pub note: Option<String>,
+    /// 詳情：這一行底下縮排的子 bullet，一項一個字串（不含 `- `）。
+    /// 摘要是上面那一行，詳情是這裡；沒寫就是空的。
+    #[serde(default)]
+    pub detail: Vec<String>,
     /// 歸戶到哪個工作項目（slug）；歸不到是 None
     pub item: Option<String>,
     /// 原始那一行，出問題時可以對照
@@ -143,6 +147,9 @@ pub struct HistoryPoint {
     pub title: String,
     pub url: Option<String>,
     pub project: String,
+    /// 那一天寫的詳情
+    #[serde(default)]
+    pub detail: Vec<String>,
 }
 
 /// 推導出來的工作項目。

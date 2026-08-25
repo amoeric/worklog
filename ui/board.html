@@ -210,7 +210,8 @@ window.Log.ready(function () {
       '<div data-card="' + item.id + '" data-od-id="card-' + item.id + '" ' +
       'class="group relative cursor-grab ' + CARD + ' hover:border-muted active:cursor-grabbing dark:hover:border-dmuted">' +
         '<a href="work-item.html?id=' + item.id + backParams() + '" ' +
-        'class="block pr-7 leading-snug underline-offset-4 hover:underline' + (dim ? ' text-muted dark:text-dmuted' : '') + '">' + esc(item.title) + '</a>' +
+        'class="block pr-7 leading-snug underline-offset-4 hover:underline' + (dim ? ' text-muted dark:text-dmuted' : '') + '">' +
+          L.spectraBadge(item.id, 'mr-1.5') + esc(item.title) + '</a>' +
         moveButton() +
         moveMenu(item) +
         '<div class="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted dark:text-dmuted">' +

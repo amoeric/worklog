@@ -620,8 +620,9 @@
       return blocks(text.split('\n'));
     }
 
-    /* css 開出來給圖片的非同步載入用：換掉佔位的時候要跟這裡長一樣 */
-    return { render: render, escape: esc, css: C };
+    /* css 開出來給圖片的非同步載入用：換掉佔位的時候要跟這裡長一樣。
+       inline 給日誌條目的詳情用——那是一句一句的短句，不需要整套區塊渲染。 */
+    return { render: render, inline: inline, escape: esc, css: C };
   })();
 
   /* 面板裡（描述、留言）的連結一律開系統瀏覽器：不在 app 視窗裡導航，也不再疊一層面板。
@@ -1163,6 +1164,9 @@
     toast: toast,
     openLinkPanel: openLinkPanel,
     renderMarkdown: MD.render,
+    /* 只跑行內語法（粗體、行內程式碼、連結），不包段落。
+       日誌條目的詳情是一句一句的短句，用這個就夠，不需要整套區塊渲染。 */
+    inlineMarkdown: MD.inline,
     searchQuery: searchQuery,
     renderSearchResults: renderSearchResults,
     checkUpdateNow: checkUpdateNow,

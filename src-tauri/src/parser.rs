@@ -8,9 +8,11 @@
 //! - `已歸檔` [feat: 對話頁補上左側清單](http://.../merge_requests/64)
 //! - `暫存` [search-message-history：對話紀錄搜尋](https://.../issues/32979)
 //! - `完成` 議題對帳：兩邊未結案數對齊
+//!   - 兩邊差 3 筆，是測試資料，已清掉
 //! ```
 //!
 //! 每行開頭的行內程式碼是狀態標籤；行內其他位置的反引號不算狀態。
+//! 縮排的子 bullet 是上一條的**詳情**，收進 `Entry.detail`，不是獨立條目。
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -134,9 +136,14 @@ pub fn parse_file(text: &str) -> (Vec<Entry>, Vec<String>) {
             if body.is_empty() {
                 continue;
             }
-            // 更深一層的縮排 bullet 是說明，不是獨立條目
+            // 更深一層的縮排 bullet 是上一條的詳情，不是獨立條目
             let indent = line.len() - line.trim_start().len();
             if indent >= 2 {
+                match entries.last_mut() {
+                    Some(e) => e.detail.push(body.to_string()),
+                    // 上面沒有條目可以掛，只好照舊回報
+                    None => skipped.push(format!("沒有主條目的詳情行：{}", trimmed)),
+                }
                 continue;
             }
             entries.push(parse_entry(&project, body, line, no));
@@ -159,6 +166,7 @@ fn parse_entry(project: &str, body: &str, raw: &str, no: usize) -> Entry {
         title,
         url,
         note,
+        detail: Vec::new(),
         item: None,
         raw: raw.trim().to_string(),
         line: no,
@@ -383,6 +391,7 @@ fn build_items(days: &[Day]) -> Vec<Item> {
                 title: e.title.clone(),
                 url: e.url.clone(),
                 project: e.project.clone(),
+                detail: e.detail.clone(),
             });
             *projects
                 .entry(slug.clone())
@@ -504,6 +513,62 @@ mod tests {
 - `完成` 建立每日工作日誌自動維護規則（寫入 `~/.claude/CLAUDE.md`）
 - 工作日誌 app 原型擴充：狀態總覽與單一項目歷程
 "#;
+
+    const DETAIL_SAMPLE: &str = r#"## proj
+
+- `實作中` [my-change：做一件事](https://example.com/issues/1)
+  - 拆成三個步驟，前兩個做完了
+  - 第三步卡在權限，明天問人
+- `完成` 另一件事
+"#;
+
+    #[test]
+    fn indented_bullets_become_the_previous_entry_detail() {
+        let (entries, skipped) = parse_file(DETAIL_SAMPLE);
+        assert!(skipped.is_empty(), "不該有看不懂的行：{:?}", skipped);
+        // 詳情不是獨立條目
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            entries[0].detail,
+            vec![
+                "拆成三個步驟，前兩個做完了".to_string(),
+                "第三步卡在權限，明天問人".to_string(),
+            ]
+        );
+        // 詳情掛在上一條，不會外溢到下一條
+        assert!(entries[1].detail.is_empty());
+        assert_eq!(entries[1].title, "另一件事");
+    }
+
+    #[test]
+    fn entry_line_numbers_survive_detail_lines() {
+        let (entries, _) = parse_file(DETAIL_SAMPLE);
+        // 行號要指到主條目那一行，改狀態才不會寫到詳情上
+        assert_eq!(entries[0].line, 2);
+        assert_eq!(entries[1].line, 5);
+    }
+
+    #[test]
+    fn a_detail_line_with_no_entry_above_is_reported() {
+        let (entries, skipped) = parse_file("## proj\n\n  - 孤零零的詳情\n");
+        assert!(entries.is_empty());
+        assert_eq!(skipped.len(), 1);
+        assert!(skipped[0].contains("沒有主條目的詳情行"));
+    }
+
+    #[test]
+    fn detail_follows_the_item_into_its_history() {
+        let mut days = vec![day_of("20260825", DETAIL_SAMPLE)];
+        let items = derive_items(&mut days);
+        let it = items.iter().find(|i| i.id == "my-change").expect("找不到 my-change");
+        assert_eq!(
+            it.history[0].detail,
+            vec![
+                "拆成三個步驟，前兩個做完了".to_string(),
+                "第三步卡在權限，明天問人".to_string(),
+            ]
+        );
+    }
 
     #[test]
     fn parses_projects_and_statuses() {

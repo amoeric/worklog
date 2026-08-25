@@ -5,40 +5,41 @@
 Rust（Tauri 2）＋ 靜態 HTML。會動到 `.md` 的只有兩件事：TODO 頁的「加到今日日誌」，
 以及看板拖卡片改狀態；兩者都只寫**今天**的檔案，插一行或只換一行的狀態標籤。
 
-## 跑起來
+## 安裝
+
+到 [Releases](https://github.com/amoeric/worklog/releases/latest) 下載 `.dmg`，打開，
+把 app 拖進「應用程式」。
+
+第一次開會問兩件事，兩個都要**允許**：
+
+- 「無法驗證開發者」→ 在 app 上按右鍵選「打開」
+- 「想要取用你『文件』檔案夾中的檔案」→ 不允許就讀不到日誌
+
+之後有新版，app 會自己在右上角提示。
+
+## 開發
 
 ```sh
 cd src-tauri
-cargo run
-```
-
-不開視窗、只想看解析結果：
-
-```sh
-cargo run --example probe                 # 用設定裡的資料夾
+cargo run                                 # 跑起來
+cargo test                                # 測試
+cargo run --example probe                 # 不開視窗，只印解析結果
 cargo run --example probe -- ~/某個資料夾   # 指定資料夾
-cargo test                                # 解析規則的測試
 ```
 
-## 打包與安裝
+前端在 `ui/`，是編進 binary 的，改完要重新編譯才會生效。
+
+### 自己打包
 
 ```sh
 cargo install tauri-cli --version "^2" --locked   # 只要裝一次
 cd src-tauri
 cargo tauri build
-cp -R "target/release/bundle/macos/每日工作日誌.app" /Applications/
 ```
 
-`.dmg` 在 `target/release/bundle/dmg/`。
+產出在 `target/release/bundle/`（`macos/` 是 .app、`dmg/` 是 .dmg）。
 
-App 沒有簽章也沒有公證，所以：
-
-- 從這台機器複製過去可以直接開
-- 如果是透過網路傳給別台機器，第一次要用右鍵「打開」，或 `xattr -dr com.apple.quarantine <app>`
-- 第一次開會跳「想要取用你『文件』檔案夾中的檔案」，要按**允許**，否則讀不到日誌
-  （按錯了到「系統設定 → 隱私權與安全性 → 檔案與檔案夾」再打開）
-
-圖示原稿是 `icon.svg`，改完重新產：
+換圖示（原稿是 `icon.svg`）：
 
 ```sh
 rsvg-convert -w 840 -h 840 icon.svg -o /tmp/i.png
@@ -177,14 +178,33 @@ quarantine 標記，macOS 有可能直接擋下來或跳警告，所以更新這
 - `已歸檔` [chore: archive room-page-full-layout](http://gitlab.example.com/group/project_a/-/merge_requests/65)
 - `暫存` [search-message-history：對話紀錄搜尋](https://redmine.example.com/issues/32979)
 - `完成` 議題對帳：兩邊未結案數對齊
+  - 補建三支提案的互連議題
 ```
 
 - `## 名字` 是專案分區
 - 每行開頭的行內程式碼是狀態，只有這八個算數：待辦、提案中、暫存、實作中、測試中、待合併、已歸檔、完成
 - 行首以外的反引號不算狀態，所以 ``（寫入 `~/.claude/CLAUDE.md`）`` 不會被誤判
 - 連結後面的括號是補充說明，會被分開存
+- **縮排兩格的子 bullet 是上一行的詳情**，不是獨立條目（見下一節）
 - 沒標狀態的行也會讀進來，只是不影響工作項目的狀態
 - 讀不懂的行不會被吞掉，會列在設定頁的「沒讀懂的行」
+
+## 摘要與詳情
+
+一條日誌是「摘要一行 ＋ 選擇性的詳情」。詳情是縮排兩格的子 bullet：
+
+```markdown
+- `實作中` search-history：對話紀錄搜尋
+  - 全文搜尋改用 pg_trgm，中文斷詞交給 pg_bigm
+  - 分頁還沒做，明天接
+```
+
+摘要一句話講完，細節放詳情。詳情只放 MR / issue 上沒有的東西：當下的判斷、卡住的地方、
+明天要接的事。大部分的事只要一行摘要。
+
+- **日誌頁**：摘要右邊有箭頭與數字，點了才展開
+- **工作項目頁**：詳情直接攤開
+- **看板**：只顯示摘要
 
 ## 工作項目是怎麼算出來的
 
@@ -203,6 +223,22 @@ quarantine 標記，macOS 有可能直接擋下來或跳警告，所以更新這
 
 **目前狀態＝最後一筆有標狀態的條目**。
 要推進狀態就在當天的 md 加一行——或是在看板上拖卡片，那等於請 app 幫你寫那一行（見〈拖卡片直接寫進今天的 md〉）。
+
+### `_items.md`：給 Claude 照抄的 slug 索引
+
+歸戶靠 slug，但寫日誌的 Claude 每天開新對話，記不得前幾天用過哪些名字，
+就會替同一件事另外取一個，那支 change 於是裂成好幾張卡。
+
+所以 app 每次讀資料夾時，會在日誌資料夾根目錄寫一份 `_items.md`，列出還沒結束的
+工作項目與 slug；規則本文叫 Claude 動筆前先讀它。
+
+這是產出不是資料：整份重寫、手改會被蓋掉，app 也不會把它讀回來。
+只列人寫的 slug（`auto-…` 不列），已結束的留 30 天。
+
+### Spectra 標記
+
+帶真 slug 的工作項目就是一支 Spectra change，前面會出現 Spectra 的 app icon。
+出現在看板卡片、狀態清單頁、工作項目頁標題；日誌頁沒有（那裡是條目不是項目）。
 
 ## 看板的範圍
 
@@ -412,6 +448,7 @@ ui/                前端（靜態檔，沒有 build step）
 src-tauri/src/
   parser.rs        md 解析與工作項目歸戶（規則都有測試）
   model.rs         狀態表與資料結構
+  index.rs         產生給 Claude 讀的 `_items.md` slug 索引（純函式，有測試）
   store.rs         設定（含外部服務 token）、日誌規則（讀寫 ~/.claude/CLAUDE.md）、TODO
   link.rs          連結解析與 Redmine／GitLab API、附圖代抓（解析與檢查規則有測試，不打網路）
   commands.rs      前端呼叫的指令（含 move_item / append_entry / fetch_link / fetch_image；寫 .md 的規則與測試都在這）

@@ -89,6 +89,42 @@ ls -l "$(ps -p "$PID" -o comm=)" # 時間要是剛才那一分鐘
 安裝到 `/Applications` 的步驟看 `README.md` 的「打包與安裝」，
 **換掉 binary 之後一定要 `codesign --force --deep --sign -` 重簽，不然 app 打不開**。
 
+## 摘要與詳情
+
+一條日誌是「摘要一行 ＋ 選擇性的詳情」。詳情是那一行底下縮排兩格的子 bullet，
+解析時收進 `Entry.detail`（以前是直接丟掉的），跟著 `HistoryPoint.detail` 走到工作項目頁。
+摘要必須自己看得懂，詳情只放 MR / issue 上找不到的東西——寫法規則在 `docs/worklog-rules.md`。
+
+前端兩處會顯示：日誌頁摘要右邊有展開鈕（預設收起），工作項目頁的歷程直接攤開。
+兩處都用 `Shell.inlineMarkdown`（只跑行內語法，不包段落）。
+
+## `_items.md`：讓 Claude 知道這是同一件事
+
+`index.rs` 在每次 `load_workspace()` 時，把「還沒歸檔、且有真 slug 的工作項目」寫成
+日誌資料夾根目錄的 `_items.md`。規則本文叫 Claude 動筆前先讀它，照抄既有的 slug——
+不然每天開新對話的 Claude 會替同一支 change 另外發明一個名字，看板上就裂成兩張卡。
+
+- 這是**產出**不是資料：整份重寫，內容沒變就不碰硬碟
+- 不會被解析回來：`is_log_file()` 只認 8 碼數字檔名，`scan_dir()` 又只往數字資料夾走
+- `auto-…` 開頭的 fallback id 不是人寫的 slug，不列進去
+- 已經結束的（已歸檔，或落在非生命週期狀態如 `完成`）留 30 天（`KEEP_FINISHED_DAYS`），
+  留一段是因為結束後偶爾還有收尾
+
+`render()` 是純函式，有測試；`write()` 失敗只會進 `Workspace.skipped`，不擋讀日誌。
+
+## Spectra 標記
+
+帶真 slug 的工作項目是 Spectra change，卡片與標題前面會出現 Spectra 的 app icon。
+判準跟 `_items.md` 一模一樣：`id` 不是 `auto-` 開頭就是（`store.js` 的 `isSpectra()`），
+所以兩邊要改就一起改。
+
+圖是從 `/Applications/Spectra.app/Contents/Resources/icon.icns` 抽出來縮成 64px 再
+base64 內嵌在 `store.js` 的 `SPECTRA_ICON`——前端整包編進 binary，讀不到外部檔案。
+換圖就重抽一次，不要改成外部路徑。
+
+顯示的地方只有「工作項目」那三頁（看板卡片、狀態清單、工作項目頁），
+日誌頁是「條目」不是「項目」，刻意不放。
+
 ## 這個 app 對日誌檔的態度
 
 只有兩條路會寫檔，兩條都在 `commands.rs` 的「寫進今天的日誌檔」那一區，而且都只動**今天**的檔案：

@@ -10,6 +10,12 @@ fn main() {
     worklog_app::model::set_table(worklog_app::store::load_statuses());
 
     tauri::Builder::default()
+        // 給 Claude Code 讀的 slug 索引（`_items.md`）：runtime 起來後在背景更新一次，
+        // 不等前端載入畫面。不能移到 main() 開頭——理由寫在 refresh_index_in_background()。
+        .setup(|_app| {
+            commands::refresh_index_in_background();
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         // 線上更新：設定在 tauri.conf.json 的 plugins.updater
         .plugin(tauri_plugin_updater::Builder::new().build())

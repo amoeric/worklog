@@ -3,6 +3,7 @@
 //! 拆成 lib 是為了讓 `examples/probe.rs` 可以不開視窗就驗證解析結果。
 
 pub mod commands;
+pub mod index;
 pub mod link;
 pub mod model;
 pub mod parser;

@@ -200,6 +200,31 @@ window.Log.ready(function () {
     return '<span class="shrink-0 rounded px-2 py-0.5 leading-tight ' + L.statusClass(id) + '">' + text + '</span>';
   }
 
+  /* 條目的詳情（底下縮排的子 bullet）。摘要那一行永遠看得到，詳情預設收起來。 */
+  function detailToggle(idx, n) {
+    return '' +
+      '<button data-detail="' + idx + '" aria-expanded="false" ' +
+      'title="展開詳情" aria-label="展開詳情（' + n + ' 項）" ' +
+      'class="ml-1 flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-muted ' +
+      'hover:bg-accentsoft hover:text-ink dark:text-dmuted dark:hover:bg-daccentsoft dark:hover:text-dink">' +
+        '<svg data-detail-arrow class="h-3.5 w-3.5 transition-transform" viewBox="0 0 24 24" fill="none" ' +
+        'stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="m9 6 6 6-6 6"/></svg>' +
+        '<span class="tabular-nums">' + n + '</span>' +
+      '</button>';
+  }
+
+  function detailHTML(e, idx, indent) {
+    var md = (window.Shell && window.Shell.inlineMarkdown) || esc;
+    return '' +
+      '<ul data-detail-body="' + idx + '" class="hidden list-disc space-y-1 border-t border-dashed border-line ' +
+      'py-2 pr-3 text-muted dark:border-dline dark:text-dmuted" style="padding-left:' + indent + '">' +
+        e.detail.map(function (d) {
+          return '<li class="ml-4">' + md(d) + '</li>';
+        }).join('') +
+      '</ul>';
+  }
+
   /* showProject：跨日期看的時候，條目自己要標是哪個專案 */
   function rowHTML(e, idx, showProject) {
     var kind = L.detectKind(e.url);
@@ -208,23 +233,34 @@ window.Log.ready(function () {
       ? '<span class="w-24 shrink-0 truncate font-mono text-muted dark:text-dmuted" title="' + esc(e.project) + '">' + esc(e.project) + '</span>'
       : '<span class="h-2 w-2 shrink-0 rounded-full ' + (kind ? 'bg-accent dark:bg-daccent' : 'bg-muted dark:bg-dmuted') + '"></span>';
     var tail = statusChip(e.status);
+    var detail = e.detail || [];
 
-    if (kind) {
-      return '' +
-        '<a href="' + esc(e.url) + '" target="_blank" rel="noopener" data-od-id="' + id + '" title="' + esc(e.title) + '" ' +
-        'class="group flex items-center gap-3 ' + ROW + ' hover:bg-accentsoft/60 dark:hover:bg-daccentsoft/60">' +
+    // 有詳情就把整條包起來：摘要一行、詳情收在底下，展開鈕放在摘要外面
+    // （摘要本身是 <a>，互動元素不能塞進連結裡）
+    var open = detail.length ? '<div class="' + ROW + '">' : '';
+    var rowCls = detail.length ? 'flex items-center gap-3' : 'flex items-center gap-3 ' + ROW;
+    var toggle = detail.length ? detailToggle(idx, detail.length) : '';
+    // 詳情往內縮到跟摘要文字對齊：專案名欄 6rem、圓點 0.5rem，都再加上間距
+    var pad = detail.length ? (showProject ? '7.75rem' : '1.25rem') : '0';
+    var body = detail.length ? detailHTML(e, idx, pad) : '';
+    var close = detail.length ? '</div>' : '';
+
+    var summary = kind
+      ? '<a href="' + esc(e.url) + '" target="_blank" rel="noopener" data-od-id="' + id + '" title="' + esc(e.title) + '" ' +
+        'class="group min-w-0 flex-1 ' + rowCls + ' hover:bg-accentsoft/60 dark:hover:bg-daccentsoft/60">' +
           head +
           '<span class="min-w-0 flex-1 truncate underline-offset-4 group-hover:underline">' + esc(e.title) + '</span>' +
           tail +
           L.linkBadge(e.url) +
-        '</a>';
-    }
-    return '' +
-      '<div data-od-id="' + id + '" title="' + esc(e.title) + '" class="flex items-center gap-3 ' + ROW + '">' +
-        head +
-        '<span class="min-w-0 flex-1 truncate">' + esc(e.title) + '</span>' +
-        tail +
-      '</div>';
+        '</a>'
+      : '<div data-od-id="' + id + '" title="' + esc(e.title) + '" class="min-w-0 flex-1 ' + rowCls + '">' +
+          head +
+          '<span class="min-w-0 flex-1 truncate">' + esc(e.title) + '</span>' +
+          tail +
+        '</div>';
+
+    if (!detail.length) return summary;
+    return open + '<div class="flex items-center pr-1">' + summary + toggle + '</div>' + body + close;
   }
 
   /* 單日：依專案分區 */
@@ -377,6 +413,17 @@ window.Log.ready(function () {
     });
     el.list.querySelectorAll('[data-open-day]').forEach(function (b) {
       b.addEventListener('click', function () { L.openLogFile(b.getAttribute('data-open-day')); });
+    });
+    el.list.querySelectorAll('[data-detail]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var body = el.list.querySelector('[data-detail-body="' + b.getAttribute('data-detail') + '"]');
+        if (!body) return;
+        var open = body.classList.toggle('hidden') === false;
+        b.setAttribute('aria-expanded', open ? 'true' : 'false');
+        b.title = open ? '收起詳情' : '展開詳情';
+        var arrow = b.querySelector('[data-detail-arrow]');
+        if (arrow) arrow.classList.toggle('rotate-90', open);
+      });
     });
 
     if (!el.cal.classList.contains('hidden')) renderCal();

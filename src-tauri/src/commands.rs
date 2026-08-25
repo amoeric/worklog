@@ -6,6 +6,7 @@ use chrono::{Datelike, Local};
 use serde::Serialize;
 use tauri_plugin_dialog::DialogExt;
 
+use crate::index;
 use crate::model::{Day, StatusDto, Workspace};
 use crate::parser;
 use crate::store::{self, Settings, Todo};
@@ -191,6 +192,15 @@ pub fn load_workspace() -> Workspace {
     let items = parser::derive_items(&mut days);
     let projects = parser::project_list(&days);
 
+    // 順手更新給 Claude Code 讀的 slug 索引。寫不出來不影響讀日誌，
+    // 但要讓使用者看得到原因，所以塞進 skipped 一起回報。
+    let mut skipped = skipped;
+    if folder_exists {
+        if let Err(e) = index::write(&folder, &items, &today_code()) {
+            skipped.push(e);
+        }
+    }
+
     Workspace {
         folder: settings.folder,
         folder_exists,
@@ -200,6 +210,21 @@ pub fn load_workspace() -> Workspace {
         projects,
         skipped,
     }
+}
+
+/// 在背景更新 `_items.md`。
+///
+/// `load_workspace()` 本身就會順手寫，但那要等前端把畫面載起來才會被呼叫；
+/// 索引是給 Claude Code 讀的，只要 app 跑起來就該是最新的，不該跟畫面綁在一起。
+///
+/// **一定要在背景執行緒跑，而且要等 tauri runtime 起來之後。**
+/// 掃資料夾會 `opendir()` 使用者的文件夾，macOS 可能要跳權限對話框——
+/// 在 `main()` 裡直接呼叫的話，視窗系統還沒起來，那個對話框顯示不出來，
+/// app 就永遠卡在啟動階段（這個坑踩過：process 活著但一個視窗都開不出來）。
+pub fn refresh_index_in_background() {
+    std::thread::spawn(|| {
+        let _ = load_workspace();
+    });
 }
 
 /// 看板改狀態的結果，讓前端知道寫到哪個檔、是改了既有那一行還是新增一行。

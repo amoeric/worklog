@@ -103,7 +103,8 @@ window.Log.ready(function () {
     var links = (it.issue ? linkTag(it.issue) : '') + (it.mr ? linkTag(it.mr) : '');
     return '' +
       '<div class="flex flex-wrap items-baseline gap-x-3 gap-y-1.5 border-b border-line px-1 py-3 last:border-0 dark:border-dline" data-od-id="status-row">' +
-        '<a href="' + rowHref(it) + '" class="min-w-0 flex-1 leading-snug underline-offset-4 hover:underline">' + esc(it.title) + '</a>' +
+        '<a href="' + rowHref(it) + '" class="min-w-0 flex-1 leading-snug underline-offset-4 hover:underline">' +
+          L.spectraBadge(it.id, 'mr-1.5') + esc(it.title) + '</a>' +
         '<span class="shrink-0 font-mono text-muted dark:text-dmuted">' + esc(it.project) + '</span>' +
         '<span class="shrink-0 tabular-nums text-muted dark:text-dmuted">' + esc(L.shortLabel(it.since)) + '　' + esc(L.stayLabel(it.since)) + '</span>' +
         (links ? '<span class="flex shrink-0 flex-wrap gap-2">' + links + '</span>' : '') +
